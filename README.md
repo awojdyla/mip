@@ -3,7 +3,7 @@
 ## About
 MIP is a Matlab class provided for basic image processing and a few optical calculations based on Fourier optics.
 
-It does not require any Matlab toolbox to run (most importantly, a few function equivalent to those in [Image Procesing Toolbox](https://www.mathworks.com/products/image.html) are implemented; it comes handy in cases where your are porting some of your code to a computer that does not have this toolbox)
+It does not require any Matlab toolbox to run (most importantly, a few function equivalent to those in [Image Procesing Toolbox](https://www.mathworks.com/products/image.html) are implemented; it comes handy in cases where your are porting some of your code to a computer that does not have this toolbox and need some basic functions, but it is by no means intended to replace the toolbox itself.)
 
 If you are interested in using open programming languages, check out [JLo](https://github.com/awojdyla/jlo), an equivalent for [Julia](http://julialang.org/), a [really powerful language](http://antoine.wojdyla.fr/blog/2017/12/17/julia-language/) with a syntax very similar to Matlab.
 
