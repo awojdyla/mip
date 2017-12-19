@@ -1,7 +1,7 @@
 # MIP - Matlab Image Processing
 
 ## About
-MIP is a Matlab class provided for basic image processing and a few optical calculations based on Fourier optics.
+MIP is a Matlab class provided for basic image processing and a few optical calculations based on Fourier optics. It is primarily meant to deal with black and white data (not color) and complex data (electric field.)
 
 It does not require any Matlab toolbox to run (most importantly, a few function equivalent to those in [Image Procesing Toolbox](https://www.mathworks.com/products/image.html) are implemented; it comes handy in cases where your are porting some of your code to a computer that does not have this toolbox and need some basic functions, but it is by no means intended to replace the toolbox itself.)
 
@@ -9,18 +9,25 @@ If you are interested in using open programming languages, check out [JLo](https
 
 ## Usage
 To use it, download MIP.m
-```git clone https://github.com/awojdyla/mip```, make sure `MIP.m` is in your current folder (or in your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). Then you can start using it by calling function like this:
+```git clone https://github.com/awojdyla/mip```
+
+Make sure `MIP.m` is in your current folder (or add them to your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). 
+
+Then you can start using it by calling functions like this:
 
 ```matlab
 img_rot = MIP.rotate(img, angle_deg)
 ```
-
 rotates an image `img` by an angle `angle_deg` in degree.
 
-The code should be reasonably documented, and you can help for most functions by typing in the Command Window (e.g. if you need help on `MIP.extract_ler`):
+The code should be reasonably documented, and you can help for most functions by typing in the Command Window (_e.g._ if you need help on `MIP.extract_ler`):
 
 ```matlab
 >>help MIP.extract_ler
+```
+Full documentation is available by typing:
+```matlab
+>>doc MIP
 ```
 
 ## Things to know
@@ -48,6 +55,10 @@ where `img` is a cell of images, and `angle_deg` is an angle in degree.
 + Measuring the line edge roughess
 + Fourier ptychography reconstruction
 + Fourier Ring Coefficients (FRC)
+
+## Helper functions
+There are a bunch of functions that can be useful:
+Fourier ring coefficients, display phase and amplitude
 
 ## Disclaimer
 The software is provided "as is", without warranty of any kind, express or implied.
