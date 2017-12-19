@@ -9,17 +9,21 @@ If you are interested in using open programming languages, check out [JLo](https
 
 ## Usage
 To use it, download MIP.m
-```git clone https://github.com/awojdyla/mip```, make sure `MIP.m` is in your current folder (or in your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). Then you can start using it by calling function like this:
+```git
+git clone https://github.com/awojdyla/mip
+```, make sure `MIP.m` is in your current folder (or in your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). Then you can start using it by calling function like this:
 
 ```matlab
-img_rot = MIP.rotate(img, angle_deg)```
+img_rot = MIP.rotate(img, angle_deg)
+```
 
 rotates an image `img` by an angle `angle_deg` in degree.
 
 The code should be reasonably documented, and you can help for most functions by typing in the Command Window (e.g. if you need help on `MIP.extract_ler`):
 
 ```matlab
->>help MIP.extract_ler```
+>>help MIP.extract_ler
+```
 
 ## Things to know
 MIP can be used to process images stacks. The image stacks are 1D-cells.
@@ -27,7 +31,8 @@ MIP can be used to process images stacks. The image stacks are 1D-cells.
 Some functions are not implemented for image stacks, but they can be batch processed using `MIP.batch`, e.g.:
 
 ```matlab
-img_rot = MIP.batch(img,sprintf('MIP.rotate(x,%c)',angle_deg));```
+img_rot = MIP.batch(img,sprintf('MIP.rotate(x,%c)',angle_deg));
+```
 
 where `img` is a cell of images, and `angle_deg` is an angle in degree.
 
