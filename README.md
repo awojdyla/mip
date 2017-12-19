@@ -40,10 +40,11 @@ where `img` is a cell of images, and `angle_deg` is an angle in degree.
 + Rotate and rescale an image
 + Crop and pad an image
 + Cell manipulation for display
++ Background subtraction and detrending
 + Cross-section, centroids
 + Displaying and saving complex data (`.kif` format)
 + Optical propagation using Fourier optics
-+ Background subtraction and detrending
++ Zernike polynomials and projection
 + Measuring the line edge roughess
 + Fourier ptychography reconstruction
 + Fourier Ring Coefficients (FRC)
