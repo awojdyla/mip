@@ -37,16 +37,16 @@ where `img` is a cell of images, and `angle_deg` is an angle in degree.
 ## Examples
 (Please refere to `test_mip.m` for many other examples)
 
-+Rotate and rescale an image
-+Crop and pad an image
-+Cell manipulation for display
-+Cross-section, centroids
-+Displaying and saving complex data (`.kif` format)
-+Optical propagation using Fourier optics
-+Background subtraction and detrending
-+Measuring the line edge roughess
-+Fourier ptychography reconstruction
-+Fourier Ring Coefficients (FRC)
++ Rotate and rescale an image
++ Crop and pad an image
++ Cell manipulation for display
++ Cross-section, centroids
++ Displaying and saving complex data (`.kif` format)
++ Optical propagation using Fourier optics
++ Background subtraction and detrending
++ Measuring the line edge roughess
++ Fourier ptychography reconstruction
++ Fourier Ring Coefficients (FRC)
 
 ## Disclaimer
 The software is provided "as is", without warranty of any kind, express or implied.
