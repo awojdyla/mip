@@ -9,9 +9,7 @@ If you are interested in using open programming languages, check out [JLo](https
 
 ## Usage
 To use it, download MIP.m
-```git
-git clone https://github.com/awojdyla/mip
-```, make sure `MIP.m` is in your current folder (or in your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). Then you can start using it by calling function like this:
+```git clone https://github.com/awojdyla/mip```, make sure `MIP.m` is in your current folder (or in your path, e.g. `addpath(/Users/awojdyla/Documents/MATLAB/mip)`). Then you can start using it by calling function like this:
 
 ```matlab
 img_rot = MIP.rotate(img, angle_deg)
