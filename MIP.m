@@ -3,92 +3,99 @@ classdef MIP < handle
     %
     % The software is provided "as is",
     % without warranty of any kind, express or implied
-    
     % A Wojdyla, CXRO/LBNL
     % awojdyla@lbl.gov
-    % September 2014 - May 2017
-    
+    % September 2014 - December 2017
     
     
     properties (Constant)
-        data_folder = '.';
-        save_folder = '.';
+        c   = 299792458         % speed of light [m/s]
+        h   = 6.626070040*1e-34 % Planck constanct [J.s]
+        eV  = 1.6021766208*1e-19% elementaty charge x 1V [J.s]
+        Ag  = 6.0221408571e23   % Avogadro number [mol-1]
+        deg = 180/pi            % degree/rad conversion
+        sigma_fhwm = 1/2*sqrt(2*log(2))
+        %data_folder = '.';
+        %save_folder = '.';
     end
     
     methods(Static)
         
-        function img = read(file_s)
-            imread(files)
+        function img = read(filestring)
+        %READ Read a single image or folder,     
+        %   MIP.read(filename)
+        %   MIP.read(folder)
+        %
+        % See also MIP.ROI, MIP.ROTATE, MIP.RESIZE
+        if exist(filestring,'file')==2
+            img = double(imread(filestring));
             
+        elseif exist(filestring,'dir')==7
+            folder = filestring;
+            subarray = @(x) {x(3:end).name};
+            if folder(end)~=filesep
+                folder = strcat(folder, filesep);
+            end
+            filenames = subarray(dir(folder));
+            
+            img = cell(1,length(filenames));
+            for i_img=1:length(img)
+                img{i_img} = double(imread(strcat(folder,filenames{i_img})));
+            end
+        end
         end
         
         function [ img_roi, x_roi, y_roi ] = ROI( img, roi_size_px, x_d, y_d)
-            % SHARP.ROI     Extract the region of interest from a SHARP image
-            %   [img_roi, x_roi, y_roi] = MIP.ROI(img)
-            %       uses a (512px)^2 region centered around the ROI
-            %   [img_roi, x_roi, y_roi] = MIP.ROI( img, roi_size_px)
-            %       lets you define the size of the ROI
-            %   [img_roi, x_roi, y_roi] = MIP.ROI( img, roi_size_px, x_d, y_d)
-            %       lets you define an offset in the x- and y-direction
+        %ROI Extract the region of interest from a SHARP image
+        %   [img_roi, x_roi, y_roi] = MIP.ROI(img)
+        %       uses a (256px)^2 region centered around the ROI
+        %   [img_roi, x_roi, y_roi] = MIP.ROI( img, roi_size_px)
+        %       lets you define the size of the ROI
+        %   [img_roi, x_roi, y_roi] = MIP.ROI( img, roi_size_px, x_d, y_d)
+        %       lets you define an offset in the x- and y-direction
             
             if nargin ==1
-                roi_size_px = 512;
+                roi_size_px = max(256, min(size(img)));
             end
             if nargin <= 2
                 x_d = 0;
                 y_d = 0;
             elseif nargin <=3
-                error('not enough arguments')
+                error('not enough arguments!')
             end
             
-            if isa(img,'cell')
-                img_roi = cell(size(img));
-                img_temp = img{1};
-                for i = 1:max(size(img))
-                    [x_roi, y_roi] = MIP.getSweetSpot(img{i}, roi_size_px);
-                    img_roi{i} = img{i}(y_roi+y_d(min(i,length(y_d))),x_roi+x_d(min(i,length(x_d))));
-                end
+            if isa(img,'cell') %recursion
+                img_roi = MIP.batch(img, ...
+                    sprintf('MIP.ROI(x, %d, %d, %d)',roi_size_px,x_d,y_d));
+                y_roi = (1:roi_size_px)+fix((size(img{1},1)-roi_size_px)/2)+y_d;
+                x_roi = (1:roi_size_px)+fix((size(img{2},2)-roi_size_px)/2)+x_d;
             else
-                if size(img,1)==2048 && size(img,2)==2048
-                    img_temp = img;
-                    [x_roi, y_roi] = MIP.getSweetSpot(img, roi_size_px);
-                    if round(x_d) == x_d && round(y_d) == y_d
-                        img_roi = img(y_roi+(y_d),x_roi+x_d);
-                    else
-                        error('offset indices must be integer')
-                    end
-                    
-                else
-                    error('The provided image do not have the right size.')
-                end
+                % make sure the offset is not too large
+                if abs(x_d)>(min(size(img))-roi_size_px)/2 || abs(y_d)>(min(size(img))-roi_size_px)/2
+                    error('the positions offset are too large')
+                end    
+
+                y_roi = (1:roi_size_px)+fix((size(img,1)-roi_size_px)/2)+y_d;
+                x_roi = (1:roi_size_px)+fix((size(img,2)-roi_size_px)/2)+x_d;
+                img_roi = img(y_roi,x_roi);
             end
-            
-            if nargout == 0
-                img_hl = img_temp;
-                img_hl(y_roi+y_d,x_roi+x_d) = 2*img_temp(y_roi+y_d,x_roi+x_d);
-                imagesc(img_hl)
-                axis image
-                title('current ROI')
-            end
-            
-            x_roi = x_roi+x_d(1);
-            y_roi = y_roi+y_d(1);
+
         end
         
         function img_rot = rotate(img, angle_deg, opt_arg)
-            %SHARP.ROTATE Rotate an image using interpolation
-            %   img_rotate = MIP.rotate(img,angle_deg)
-            %   rotates the image by the specified angle, ccw.
-            %   the input can be a single image or a cell stack
-            %
-            %   img_rotate = MIP.rotate(img,angle_deg,'crop')
-            %   does the same but crops the image to remove nan zones
-            %
-            % See also SHARP.RESIZE, SHARP.CROP2
+        %ROTATE Rotate an image using interpolation
+        %   img_rotate = MIP.rotate(img,angle_deg)
+        %   rotates the image by the specified angle, ccw.
+        %   the input can be a single image or a cell stack
+        %
+        %   img_rotate = MIP.rotate(img,angle_deg,'crop')
+        %   does the same but crops the image to remove nan zones
+        %
+        % See also MIP.RESIZE, MIP.CROP2
             
             %batch mode, if the input is an image stack
             if isa(img,'cell')
-                img_rot = MIP.batch(img,sprintf('MIP.rotate(x,%c)',angle_deg));
+                img_rot = MIP.batch(img,sprintf('MIP.rotate(x,%d)',angle_deg));
             else
                 
                 if isreal(img)
@@ -122,9 +129,9 @@ classdef MIP < handle
         
         
         function img_resized = resize(img,x_size_px,y_size_px)
-            % RESIZE  Resize an image using interpolation
-            %   img_resized = MIP.resize(img, size_px)
-            %   img_resized = MIP.resize(img, x_size_px, y_size_px)
+        %RESIZE  Resize an image using interpolation
+        %   img_resized = MIP.resize(img, size_px)
+        %   img_resized = MIP.resize(img, x_size_px, y_size_px)
             if nargin==2
                 if size(img,1)==size(img,2)
                     y_size_px = x_size_px;
@@ -132,21 +139,25 @@ classdef MIP < handle
                     error('the image should be square if you only use two arguments.')
                 end
             end
-            
-            [X1,Y1] = meshgrid(linspace(-0.5,0.5,size(img,1)),linspace(-0.5,0.5,size(img,2)));
-            [X2,Y2] = meshgrid(linspace(-0.5,0.5,  x_size_px),linspace(-0.5,0.5,  y_size_px));
-            img_resized = interp2(X1,Y1,img',X2,Y2)';
+            if isa(img,'cell')
+                img_resized = MIP.batch(img,sprintf('MIP.resize(x,%d,%d)',x_size_px,y_size_px));
+            else
+                [X1,Y1] = meshgrid(linspace(-0.5,0.5,size(img,1)),linspace(-0.5,0.5,size(img,2)));
+                [X2,Y2] = meshgrid(linspace(-0.5,0.5,  x_size_px),linspace(-0.5,0.5,  y_size_px));
+                img_resized = interp2(X1,Y1,img',X2,Y2)';
+            end
         end
         
         function img_binned = bin2(img,p,q)
-            %SHARP.BIN2  2-dimensionnal binning of an image
-            %   img_binned = MIP.bin2(img, x_bin, y_bin)
-            %
-            % Example :
-            %   img_binned = bin2(img, 2, 3);
+        %BIN2 2-dimensionnal binning of an image
+        %   img_binned = MIP.bin2(img, x_bin, y_bin)
+        %
+        % Example :
+        %   img_binned = bin2(img, 2, 3);
+
+        % Matt, from MathCentral
+        % http://www.mathworks.com/matlabcentral/newsreader/view_thread/248189
             
-            % Matt, from MathCentral
-            % http://www.mathworks.com/matlabcentral/newsreader/view_thread/248189
             [m,n]=size(img); %M is the original matrix
             
             img=sum( reshape(img,p,[]) ,1 );
@@ -157,15 +168,15 @@ classdef MIP < handle
         end
         
         function out = pad2(x, numrows, numcols)
-            %SHARP.PAD2  Pad a matrix with zeros, symmetrically in bothdirections
-            %   out = MIP.pad2(in, newlength)
-            %   assumes that the final size in both directions is the same
-            %   out = MIP.pad2(in, numrows, numcols)
-            %   pad with different size in both directions
-            %
-            %   See also SHARP.CROP2
-            
-            % R Miyakawa
+        %PAD2  Pad a matrix with zeros, symmetrically in bothdirections
+        %   out = MIP.pad2(in, newlength)
+        %   assumes that the final size in both directions is the same
+        %   out = MIP.pad2(in, numrows, numcols)
+        %   pad with different size in both directions
+        %
+        %   See also MIP.CROP2
+
+        % R Miyakawa
             
             if nargin == 2
                 numcols = numrows;
@@ -185,13 +196,13 @@ classdef MIP < handle
         end
         
         function out = crop2(in, lenr, lenc)
-            %SHARP.CROP2 Crop a matrix, symetrically in both directions
-            %   out = MIP.crop2(in, length)
-            %   out = MIP.crop2(in, length, width)
-            %
-            %   See also SHARP.PAD2
-            
-            % R Miyakawa
+        %CROP2 Crop a matrix, symetrically in both directions
+        %   out = MIP.crop2(in, length)
+        %   out = MIP.crop2(in, length, width)
+        %
+        %   See also MIP.PAD2
+
+        % R Miyakawa
             
             if isa(in,'cell')
                 out = MIP.batch(in,sprintf('MIP.crop2(x,%d)',lenr));
@@ -222,21 +233,23 @@ classdef MIP < handle
         end
         
         function image_shifted = circshift2(input, x_shift_px, y_shift_px)
-            % SHARP.CIRCSHIFT2 Image shift using circular permutation
-            %   img_shifted = MIP.circshift2(img, x_shift_px, y_shift_px)
-            %   shifts the image in x- and y-direction, to the nearest pixel
-            %
-            % See also SHARP.SPSHIFT2
+        %CIRCSHIFT2 Image shift using circular permutation
+        %   img_shifted = MIP.circshift2(img, x_shift_px, y_shift_px)
+        %   shifts the image in x- and y-direction, to the nearest pixel
+        %
+        % See also MIP.SPSHIFT2
+            
             image_shifted = circshift(circshift(input',round(x_shift_px))',round(y_shift_px));
         end
         
-        
         function img_shifted = spshift2( img,x_shift_px, y_shift_px )
-            %SHARP.SPSHIFT Sub-pixel image shift using spectral phase
-            %   img_shifted = MIP.spshift2( img,x_shift_px, y_shift_px )
-            %       shifts the image in x- and y-direction with fractional pixel
-            %
-            % See also SHARP.CIRCSHIFT2
+        %SPSHIFT2 Sub-pixel image shift using spectral phase
+        %   img_shifted = MIP.spshift2( img,x_shift_px, y_shift_px )
+        %       shifts the image in x- and y-direction with fractional pixel
+        %
+        %    This function does work for complex data., and wraps around
+        %
+        % See also MIP.CIRCSHIFT2
             
             if size(x_shift_px,1) ~= 1 || size(x_shift_px,2) ~= 1 ...
                     || size(y_shift_px,1) ~= 1 || size(y_shift_px,2) ~= 1
@@ -245,45 +258,23 @@ classdef MIP < handle
                 error('Sparp.spshift :: empty shift')
             end
             
-            [FX,FY] = meshgrid(...
-                (ceil(-size(img,2)/2):ceil(-1+size(img,2)/2))/size(img,2),...
-                (ceil(-size(img,1)/2):ceil(-1+size(img,1)/2))/size(img,1));
+            fx = MIP.fs(1:size(img,2));
+            fy = MIP.fs(1:size(img,1));
             
-            if nargin==2
-                y_shift_px = 0;
+            [Fx, Fy] = meshgrid(fx, fy);
+            
+            img_shifted = real(MIP.ift(exp(1i*2*pi*(Fx*x_shift_px+Fy*y_shift_px)).*MIP.ft(real(img))));
+            if sum(abs(imag(img(:))))~=0
+                img_in =  real(MIP.ift(exp(1i*2*pi*(Fx*x_shift_px+Fy*y_shift_px)).*MIP.ft(imag(img))));
+                img_shifted = img_shifted+1i*img_in;
             end
             
-            
-            %x_shift_px = round(x_shift_px);
-            %y_shift_px = round(y_shift_px);
-            
-            
-            img_shifted_re = real((fftshift(ifft2(ifftshift( ...
-                fftshift(fft2(ifftshift(real(img)))).*...
-                exp(-1i*2*pi*(FX*x_shift_px+FY*y_shift_px)))...
-                ))));
-            
-            img_shifted_im = real((fftshift(ifft2(ifftshift( ...
-                fftshift(fft2(ifftshift(imag(img)))).*...
-                exp(-1i*2*pi*(FX*x_shift_px+FY*y_shift_px)))...
-                ))));
-            
-            if isreal(img)
-                img_shifted = img_shifted_re;
-            elseif isreal(1i*img)
-                img_shifted = 1i*img_shifted_im;
-            else
-                img_shifted = img_shifted_re+1i*img_shifted_im;
-                
-            end
         end
         
-        
         function [ img_lowpass ] = lowpass( img, radius )
-            %LOWPASS Applies a gaussian lowpass filter to an image
-            %   img_lowpass = lowpass2( img, radius )
-            %       performs a Gaussian lowpassing with specified radius
-            
+        %LOWPASS Applies a gaussian lowpass filter to an image
+        %   img_lowpass = lowpass2( img, radius )
+        %       performs a Gaussian lowpassing with specified radius
             
             if nargin == 1
                 radius = 10;
@@ -310,22 +301,10 @@ classdef MIP < handle
             end
             
         end
-        
-        function img_out = filter(img_in)
-            % FILTER Remove the noise that lies outside the angular
-            % spectrum
-            % img_out = MIP.filter(img_in) works for .33 4xNA data
-            %
-            % See also SHARP.HOMOGENIZE
-            [FX,FY] = meshgrid(linspace(-2.703,2.703,size(img_in,2)),...
-                linspace(-2.703,2.703,size(img_in,1)));
-            FILTER  = double(FX.^2+FY.^2<1);
-            img_out = real(MIP.ift(MIP.ft(img_in).*FILTER));
-        end
-        
+
         function [ img_out ] = detrend2( img_in )
-            % SHARP.DETREND2 Remove a 2nd order 2D polynomial trend in an image
-            %   [ img_out ] = MIP.detrend2(img_in)
+        %DETREND2 Remove a 2nd order 2D polynomial trend in an image
+        %   [ img_out ] = MIP.detrend2(img_in)
             
             
             [X,Y]=meshgrid(1:size(img_in,2),1:size(img_in,1));
@@ -346,12 +325,67 @@ classdef MIP < handle
             warning('detrending still under testing')
         end
         
+        function cell_out = batch(cell_in, instruction)
+        %BATCH Batch processing for cells of image
+        %   cell_out = batch(cell_in, instruction)
+        %   applies the 'instruction' to the cells considered
+        %   the instruction is a function handle
+        %                   or a string to be evaluated
+        %                   (e.g. 'abs(x).^2')
+        %
+        % See also MIP.mat2cell, MIP.tile_cell
+            
+            if min(size(cell_in))~=1
+                error('MIP.batch : cell arrays must be 1xN. See MIP.batch2')
+            end
+            cell_out = cell(size(cell_in));
+            if isa(instruction,'function_handle')
+                for i=1:length(cell_in)
+                    cell_out{i} = instruction(cell_in{i});
+                end
+            else
+                for i=1:length(cell_in)
+                    x = cell_in{i};
+                    cell_out{i} = eval(instruction);
+                end
+            end
+        end
+        
+        %FIXME : fail grace typechecking
+        function img_as_mat = cell2mat(img_as_cell)
+        %CELL2MAT Transforms a cell-based stack of images into a 3D matrix
+        %   img_as_mat = MIP.cell2mat(img_as_cell)
+        %
+        % See also MIP.MAT2CELL
+            
+            N_img = length(img_as_cell);
+            img_as_mat = zeros(size(img_as_cell{1},1),...
+                size(img_as_cell{1},2),...
+                N_img);
+            for i=1:N_img
+                img_as_mat(:,:,i) = img_as_cell{i};
+            end
+        end
+        
+        %FIXME : fail grace typechecking
+        function img_as_cell = mat2cell(img_as_mat)
+        %MAT2CELL Transforms a 3D matrix into a cell-based stack of images
+        %   img_as_cell = MIP.mat2cell(img_as_mat)
+        %
+        % See also MIP.CELL2MAT
+            
+            N_img = size(img_as_mat,3);
+            img_as_cell = cell(N_img,1);
+            for i=1:N_img
+                img_as_cell{i} = img_as_mat(:,:,i);
+            end
+        end
         
         %TODO : automate on series
         function [ img_appended ] = tile(varargin)
-            % TILE  Appends images horizontally
-            %   img_tiled = MIP.tile(img1,img2,img3,...)
-            %   creates a tiled image of all the input images
+        %TILE  Appends images horizontally
+        %   img_tiled = MIP.tile(img1,img2,img3,...)
+        %   creates a tiled image of all the input images
             
             if nargin == 1 % do nothing
                 img_appended = varargin{1};
@@ -374,10 +408,11 @@ classdef MIP < handle
         end
         
         function tile_q = tile_cell(img_cells)
-            % SHARP.TILE_CELL     Transform a cell array into an image
-            %   tile_q = MIP.tile_cell(img_cells)
-            %
-            % See also : SHARP.CELL_STITCH ,SHARP.TILE
+        %TILE_CELL     Transform a cell array into an image
+        %   tile_q = MIP.tile_cell(img_cells)
+        %
+        % See also : MIP.CELL_STITCH ,MIP.TILE
+        
             tile_q = img_cells{1};
             for q=2:length(img_cells)
                 tile_q = MIP.tile(tile_q,img_cells{q});
@@ -385,12 +420,11 @@ classdef MIP < handle
         end
         
         function stack_q = stack_cell(img_cells)
-            % SHARP.STACK_CELL
-            %   tile_q = MIP.stack_cell(img_cells)
-            %
-            % imagesc(MIP.stack_cell(MIP.ROI(MIP.read(MIP.less((MIP.find('IMO14')))),300)));
-            %
-            % See also : SHARP.CELL_STITCH ,SHARP.TILE_CELL
+        %STACK_CELL
+        %   tile_q = MIP.stack_cell(img_cells)
+        %
+        % See also : MIP.CELL_STITCH ,MIP.TILE_CELL
+        
             N_r = floor(sqrt(length(img_cells)));
             img_stack = cell(N_r,N_r+1);
             for i= 1:N_r
@@ -403,99 +437,10 @@ classdef MIP < handle
             end
         end
         
-        function cell_out = batch(cell_in, instruction)
-            %SHARP.BATCH Batch processing for cells of image
-            %   cell_out = batch(cell_in, instruction)
-            %   applies the 'instruction' to the cells considered
-            %   the instruction is a function handle
-            %                   or a string to be evaluated
-            %                   (e.g. 'abs(x).^2')
-            %
-            % See also MIP.mat2cell, MIP.tile_cell
-            
-            if min(size(cell_in))~=1
-                error('MIP.batch : cell arrays must be 1xN. See MIP.batch2')
-            end
-            cell_out = cell(size(cell_in));
-            if isa(instruction,'function_handle')
-                for i=1:length(cell_in)
-                    cell_out{i} = instruction(cell_in{i});
-                end
-            else
-                for i=1:length(cell_in)
-                    x = cell_in{i};
-                    cell_out{i} = eval(instruction);
-                end
-            end
-        end
-        
-        function cell_out = batch2(cell_in, instruction)
-            %FIXME
-            %SHARP.BATCH2 Batch processing for cells of image
-            %   cell_out = batch(cell_in, instruction)
-            %   applies the 'instruction' to the cells considered
-            %   the instruction is a function handle
-            %                   or a string to be evaluated
-            %                   (e.g. 'abs(x).^2')
-            %
-            % See also MIP.mat2cell, MIP.tile_cell
-            
-            cell_out = cell(size(cell_in));
-            if isa(instruction,'function_handle')
-                for i=1:size(cell_in,1)
-                    for j=1:size(cell_in,2)
-                        cell_out{i,j} = instruction(cell_in{i,j});
-                    end
-                end
-            else
-                for i=1:size(cell_in,1)
-                    for j=1:size(cell_in,2)
-                        x = cell_in{i,j};
-                        cell_out{i,j} = eval(instruction);
-                    end
-                end
-            end
-        end
-        
-        
-        %FIXME : fail grace typechecking
-        function img_as_mat = cell2mat(img_as_cell)
-            % CELL2MAT Transforms a cell-based stack of images into a 3D matrix
-            %   img_as_mat = MIP.cell2mat(img_as_cell)
-            %
-            % See also SHARP.MAT2CELL
-            
-            N_img = length(img_as_cell);
-            img_as_mat = zeros(size(img_as_cell{1},1),...
-                size(img_as_cell{1},2),...
-                N_img);
-            for i=1:N_img
-                img_as_mat(:,:,i) = img_as_cell{i};
-            end
-        end
-        
-        
-        %FIXME : fail grace typechecking
-        function img_as_cell = mat2cell(img_as_mat)
-            % MAT2CELL Transforms a 3D matric into a cell-based stack of images
-            %   img_as_cell = MIP.mat2cell(img_as_mat)
-            %
-            % See also SHARP.CELL2MAT
-            
-            N_img = size(img_as_mat,3);
-            img_as_cell = cell(N_img,1);
-            for i=1:N_img
-                img_as_cell{i} = img_as_mat(:,:,i);
-            end
-        end
-        
-        
         %FIXME non square images, inline cells
         function img_full = cell_stitch(img_sub)
-            % CELL_STITCH Stitches many 2D cells to form a complete 2D image
-            %   img_full = MIP.cell_stitch(img_sub)
-            
-            %warning('function probably broken')
+        %CELL_STITCH Stitches many 2D cells to form a complete 2D image
+        %   img_full = MIP.cell_stitch(img_sub)
             
             if ~isempty(img_sub{1,1})
                 N_r = size(img_sub,1);
@@ -530,6 +475,9 @@ classdef MIP < handle
         %% Image stats
         
         function img_sum = sum_img(img)
+        %SUM_IMG Perfoms the sum of all images in the imag stack
+        %   img_sum = sum_img(img)
+        
             N_img = length(img);
             img_sum = zeros(size(img{1}));
             for i = 1:N_img
@@ -538,21 +486,30 @@ classdef MIP < handle
         end
         
         function rms = rms_diff(img_ref,img_comp)
+        %RMS_DIFF Average pixel difference
+        %   rms = rms_diff(img_ref,img_comp)
+        
             rms = sum(abs(img_ref(:)-img_comp(:)).^2)...
                 /sum(abs(img_ref(:)).^2);
         end
         
         function rms = nrms_diff(img_ref,img_comp)
+        %NRMS_DIFF Normalized Average pixel difference   
+        %   nrms = nrms_diff(img_ref,img_comp)
+        %
+        %   nrms = 0 for two identical image
+        %   nrms = 1 for an image compared to background
+        %   nrms can be larger than 1 (MIP.nrms_diff(img,-img)=2)
             rms = sqrt(sum((img_ref(:)-img_comp(:)).^2)) ...
                 ./sqrt(sum( img_ref(:)             .^2));
         end
         
         %FIXME : check
         function [ array_out ] = circsum( img_in )
-            % CIRCSUM Circular sum
-            %  array_out = circsum(img_in)
-            %
-            % See also MIP.FRC
+        %CIRCSUM Circular sum in 2D
+        %   array_out = circsum(img_in)
+        %
+        % See also MIP.FRC
             
             if size(img_in,1) ~= size(img_in,2)
                 error('the input matrix must be square')
@@ -568,25 +525,17 @@ classdef MIP < handle
             for i=1:floor(N_px/2)
                 domain = ((X-xc).^2+(Y-yc).^2)>=(i-1)^2 & ((X-xc).^2+(Y-yc).^2)<(i)^2;
                 dcirc(i) = sum(sum(domain.*(img_in)));
-                %                 fprintf('%d ',i)
-                %                 if mod(i, 30)==0
-                %                     fprintf('\n')
-                %                 end
             end
-            
-            %array_out = cumsum(dcirc);
+
             array_out = dcirc;
             
         end
         
-        
         function [ freq_axis ] = fs(real_axis)
-            %SHARP.FS 1D or 2D Frequency scale, zero-centered in inverse spatial units
-            %   f = fs(t) creates a frequency scale that matches
-            %     the zero centered Fourier transform of a signal
-            %   freq = MIP.fs(time)
-            %
-            % See also SHARP.FT, SHARP.IFT
+        %FS 1D or 2D Frequency scale, zero-centered in inverse spatial units
+        %   freq_Hz = MIP.fs(time_s)
+        %
+        % See also MIP.FT, MIP.IFT
             
             fs = 1/(real_axis(2)-real_axis(1));
             Nfft = length(real_axis);
@@ -595,48 +544,40 @@ classdef MIP < handle
             freq_axis = (0:df:(fs-df)) - (fs-mod(Nfft,2)*df)/2;
         end
         
-        
         function SIGNAL = ft(signal)
-            %SHARP.FT 1D or 2D zero-centered Fourier Transform
-            %   SHARP.FT Performs a Fourier transform using optics convention
-            %   SIGNAL = MIP.ft(signal)
-            %
-            %   See also SHARP.IFT, SHARP.FS
+        %FT 1D or 2D zero-centered Fourier Transform
+        %   MIP.FT Performs a Fourier transform using optics convention
+        %   SIGNAL = MIP.ft(signal)
+        %
+        %   See also MIP.IFT, MIP.FS
             
             if size(signal,1) == 1 || size(signal,2) == 1
                 SIGNAL = fftshift( ifft( ifftshift( signal ) ) );
-            else %perform a 2D fourier Transform
+            else % perform a 2D fourier Transform
                 SIGNAL = fftshift( ifft2( ifftshift( signal ) ) );
-                if size(signal,1) ~= size(signal,2)
-                    %                    warning('ft:A 2D FT has been performed by default')
-                end
             end
         end
         
-        
         function signal = ift(SIGNAL)
-            %SHARP.IFT 1D or 2D zero-centered Inverse Fourier Transform
-            %   SHARP.IFT Performs a Inv Fourier transform using optics convention
-            %   signal = ift(SIGNAL)
-            %   See also SHARP.FT, SHARP.FS
-            
-            % A Wojdyla, Jan 2014
+        %IFT 1D or 2D zero-centered Inverse Fourier Transform
+        %   MIP.IFT Performs a Inv Fourier transform using optics convention
+        %   signal = MIP.ift(SIGNAL)
+        %
+        %   See also MIP.FT, MIP.FS
             
             if size(SIGNAL,1) == 1 || size(SIGNAL,2) == 1
                 signal = fftshift( fft( ifftshift( SIGNAL ) ) );
             else %perform a 2D fourier Transform
                 signal = fftshift( fft2( ifftshift( SIGNAL ) ) );
-                if size(SIGNAL,1) ~= size(SIGNAL,2)
-                    warning('ift:A 2D IFT has been performed by default')
-                end
             end
         end
         
         function [ img_out ] = remove_dc( img_in )
-            % SHARP.REMOVE_DC Removes the DC componenta of an image (for better display)
-            %   [ img_out ] = remove_dc(img_in)
-            %
-            % See also SHARP.REMOVE_BG
+        %REMOVE_DC Removes the DC component of an image (for better display)
+        %   img_out = remove_dc(img_in)
+        %
+        % See also MIP.REMOVE_BG
+            
             img_size = size(img_in,1);
             [X,Y] = meshgrid(1:img_size);
             mask = (X == round(1+img_size/2)) | (Y == round(1+img_size/2));
@@ -644,25 +585,13 @@ classdef MIP < handle
             img_out(mask) = 0;mean(img_in(:));
         end
         
-        function [ img_out ] = remove_zero( img_in )
-            % SHARP.REMOVE_DC Removes the DC componenta of an image (for better display)
-            %   [ img_out ] = remove_dc(img_in)
-            %
-            % See also SHARP.REMOVE_BG
-            img_size = size(img_in,1);
-            [X,Y] = meshgrid(1:img_size);
-            mask = (X == round(1+img_size/2)) & (Y == round(1+img_size/2));
-            img_out = img_in;
-            img_out(mask) = 0;mean(img_in(:));
-        end
-        
-        
         function s_out = sgolay(s_in)
-            % SHARP.SGOLAY Savitzky-Golay filtering (5pt window, 3rd order)
-            %   s_out = MIP.sgolay(s_in)
-            %   (implementation for missing Signal Processing toolbox)
-            %
-            % See also
+        %SGOLAY Savitzky-Golay filtering (5pt window, 3rd order)
+        %   s_out = MIP.sgolay(s_in)
+        %   (implementation for missing Signal Processing toolbox)
+        %
+        % See also MIP.SDIFF
+        
             s_out = s_in;
             s_out(3:end-2) = 1/35*(...
                 -3*(s_in(1:end-4)+s_in(5:end))...
@@ -671,9 +600,12 @@ classdef MIP < handle
         end
         
         function s_out = sdiff(s_in)
-            %SHARP.SDIFF Savitzky-Golay differential (5pt window, 3rd order)
-            %   s_out = MIP.sdiff(s_in)
-            %   (implementation for missing Signal Processing toolbox)
+        %SDIFF Savitzky-Golay differential (5pt window, 3rd order)
+        %   s_out = MIP.sdiff(s_in)
+        %   (implementation for missing Signal Processing toolbox)
+        %
+        %   See also MIP.SGOLAY, MIP.SDIFF2
+        
             s_out = s_in;
             s_out(3:end-2) = 1/12*(...
                 1*(s_in(1:end-4)+s_in(5:end))...
@@ -682,7 +614,11 @@ classdef MIP < handle
         end
         
         function s_out = sdiff2(s_in)
-            %SHARP.SGOLAY2 Savitzky-Golay differential (5pt window, 3rd order)
+        %SDIFF2 Savitzky-Golay second order differential (5pt window, 3rd order)
+        %   s_out = MIP.sdiff2(s_in)
+        %
+        %   See also MIP.SGOLAY, MIP.SDIFF
+        
             s_out = s_in;
             s_out(3:end-2) = 1/7*(...
                 2*(s_in(1:end-4)+s_in(5:end))...
@@ -690,35 +626,15 @@ classdef MIP < handle
                 -2* s_out(3:end-2));
         end
         
-        % TODO : better tests
-        function pitch_m = count_pitch(img)
-            %SHARP.COUNT_PITCH determination of the pitch based on an image
-            % Only works for vertical lines
-            dx = 15e-9;
-            
-            if isa(img,'cell')
-                img = img{1};
-            end
-            if size(img,1) == 2048
-                meta = MIP.metadata(img);
-                dx   =  meta.image_umperpx*1e-6;
-                img  = MIP.crop2(MIP.rotate(MIP.ROI(img,600),MIP.rot_angle_deg),512);
-            end
-            
-            IMG = fft2(img);
-            [~, imax] = max(IMG(1,2:end/2));
-            pitch_m = dx*size(img,2)/(imax + 1);
-        end
-        
-        
         function [frc_array, halfbit_threshold]  = frc(img1, img2)
-            % FRC Fourier Ring Coefficients between two images
-            %   frc_coeffs = MIP.frc(img1, img2)
-            %       computes the FRC coefficients between two images
-            %   [frc_array, halfbit_threshold] = MIP.frc(img1,img2)
-            %
-            % See Nieuwenhuizen et al. Nature Methods 10, 6 (2013)
-            %  http://doi.org/10.1038/nmeth.2448
+        %FRC Fourier Ring Coefficients between two images
+        %   frc_coeffs = MIP.frc(img1, img2)
+        %       computes the FRC coefficients between two images
+        %   [frc_array, halfbit_threshold] = MIP.frc(img1,img2)
+        %
+        % See Nieuwenhuizen et al. Nature Methods 10, 6 (2013)
+        %  http://doi.org/10.1038/nmeth.2448
+        
             frc_array = MIP.circsum(MIP.ft(img1).*conj(MIP.ft(img2)))./...
                 ((sqrt(MIP.circsum(abs(MIP.ft(img1)).^2)).*sqrt(MIP.circsum(abs(MIP.ft(img2)).^2))));
             
@@ -729,9 +645,9 @@ classdef MIP < handle
         
         %TODO implement
         function [argout1, argout2] = cross_section(img_data,x1,y1,x2,y2)
-            % CROSS_SECTION Computes the cross-section between two points
-            %   [data] = MIP.cross_section(img,x1,y1,x2,y2)
-            %   [px_scale,data] = MIP.cross_section(img,x1,y1,x2,y2)
+        %CROSS_SECTION Computes the cross-section between two points
+        %   [data] = MIP.cross_section(img,x1,y1,x2,y2)
+        %   [px_scale,data] = MIP.cross_section(img,x1,y1,x2,y2)
             
             if x1==x2 && y1==y2
                 error('the two datapoints should be distinct')
@@ -750,13 +666,11 @@ classdef MIP < handle
             x_i = x_i_0+x1;
             y_i = y_i_0+y1;
             
-            
             % Extracting oblique strids for linear interpolation
             ff = data(mod(floor(y_i)+size(data,1)*floor(x_i-1)-1,size(data,1)*size(data,2))+1);
             cf = data(mod(floor(y_i)+size(data,1)*floor(x_i)-1,size(data,1)*size(data,2))+1);
             fc = data(mod(floor(y_i+1)+size(data,1)*floor(x_i-1)-1,size(data,1)*size(data,2))+1);
             cc = data(mod(floor(y_i+1)+size(data,1)*floor(x_i)-1,size(data,1)*size(data,2))+1);
-            
             
             data = (1-(y_i-floor(y_i))).*...
                 ((1-(x_i-floor(x_i))).*ff...
@@ -773,14 +687,15 @@ classdef MIP < handle
             end
         end
         
+        %FIXME: make more general
         function half_pitch_4x_nm = measure_halfpitch(img,nm_px,opt_arg)
-            % MEASURE_HALFPITCH Estimate of the Half-pitch, wafer units (4x)
-            %   half_pitch_nm_4x = measure_pitch(img,nm_px)
-            %
-            %   half_pitch_nm_4x = measure_pitch(img)
-            %       assumes .33 4x NA lens data
-            %
-            % See also SHARP.CROSS_SECTION, SHARP.EXTRACT_LER
+        %MEASURE_HALFPITCH Estimate of the Half-pitch, wafer units (4x)
+        %   half_pitch_nm_4x = measure_pitch(img,nm_px)
+        %
+        %   half_pitch_nm_4x = measure_pitch(img)
+        %       assumes .33 4x NA lens data
+        %
+        % See also MIP.CROSS_SECTION, MIP.EXTRACT_LER
             
             % effective pixel size (default as .33 4xNA measurements)
             if nargin <2
@@ -828,15 +743,14 @@ classdef MIP < handle
             end
         end
         
-        %TODO IMPLEMENT
         function img_lines = extract_lines(img, offset_px)
-            % EXTRACT_LINES Extract individual lines from an image for later analysis
-            %   img_lines = MIP.extract_lines(img)
-            %
-            % See also SHARP.EXTRACT_LER, SHARP.MEASURE_HALFPITCH
+        %EXTRACT_LINES Extract individual lines from an image for later analysis
+        %   img_lines = MIP.extract_lines(img)
+        %
+        % See also MIP.EXTRACT_LER, MIP.MEASURE_HALFPITCH
             
             if nargin<2
-                offset_px = 0
+                offset_px = 0;
             end
             
             % effective pixel size
@@ -870,16 +784,16 @@ classdef MIP < handle
         
         %FIXME make sure the line is vertical and positive
         function [ x1, x2 ] = extract_ler( img_line, threshold, interp_factor, opt_arg)
-            %EXTRACT_LER Extract the left and righ edge of a line
-            %   [ left_edge, right_edge ] = extract_ler( img_line, threshold, interp_factor )
-            %       where img_line is an image containg only one line
-            %             threshold is the threshold value
-            %             interp_factor the optional interpolation factor
-            %
-            % This function uses linear interpolation for finding the edges
-            % in a robust an efficient way
-            %
-            % See also MIP.extract_lines
+        %EXTRACT_LER Extract the left and righ edge of a line
+        %   [ left_edge, right_edge ] = extract_ler( img_line, threshold, interp_factor )
+        %       where img_line is an image containg only one line
+        %             threshold is the threshold value
+        %             interp_factor the optional interpolation factor
+        %
+        % This function uses linear interpolation for finding the edges
+        % in a robust an efficient way
+        %
+        % See also MIP.EXTRACT_LINES
             
             if isa(img_line,'cell')
                 error('MIP.extract_ler > please provide a valid single image');
@@ -897,9 +811,7 @@ classdef MIP < handle
                 end
             end
             
-            
-            
-            % size of th imaage
+            % size of th image
             x_px = size(img_line,1);
             y_px = size(img_line,2);
             % if some interpolation is needed, resize the imgae (brute force)
@@ -967,24 +879,16 @@ classdef MIP < handle
                 plot(x1,1:length(x1),'b',x2',1:length(x2),'r')
                 hold off
             end
-            %             x_nm = ((1:size(img_line,2))-1)*15-215;
-            %             mm = max(img_line(1,:));
-            %             plot(x_nm,img_line(1,:)/mm,'k-o',xl*15-237.5,threshold/mm,'r+',xr*15-237.5,threshold/mm,'b+')
-            %             axis tight
-            %             xlabel('position [nm]')
-            %             ylabel('intensity [a.u.]')
-            %             xlim([-160 160])
-            
         end
         
         function [ x_d, I_d, cd_m, hp_m, NILS ] = extract_cd( x_m, I_ct, threshold_ct )
-            %EXTRACT_CD extraction of CD from a measurement
-            %   [ x_d, I_d, cd_m, hp_m, NILS ] = extract_cd( x_m, I_ct, threshold_ct )
-            %
-            % it gives you the spatial coordinates at threshold crossing (x_d) and the
-            % value at this point (I_d should be threshold!).
-            % It also spits out the cd in nm for each line (if the actual spatial scale is given)
-            % and the (signed) NILS for each edge.
+        %EXTRACT_CD extraction of CD from a measurement
+        %	[ x_d, I_d, cd_m, hp_m, NILS ] = extract_cd( x_m, I_ct, threshold_ct )
+        %
+        % it gives you the spatial coordinates at threshold crossing (x_d) and the
+        % value at this point (I_d should be threshold!).
+        % It also spits out the cd in nm for each line (if the actual spatial scale is given)
+        % and the (signed) NILS for each edge.
             
             if size(I_ct,1)>1 && size(I_ct,2)>1
                 error('please provide 1D data')
@@ -1004,32 +908,24 @@ classdef MIP < handle
             
             temp = diff(x_d);
             cd_m = temp(1:2:end);
-            
-            
-            
             hp_m = mean(temp);
-            
-            
-            
             NILS = interp1(x_m-dx_m/2,[0 mean(cd_m)*diff(log(I_ct))/dx_m],x_d);
-            
             
             if nargout==0
                 plot(x_m,abs([0 mean(cd_m)*diff(log(I_ct))/dx_m]),x_d,abs(NILS),'o')
                 
             end
-            
         end
         
         function [ lw, xl, xr ] = extract_lw( array_line, threshold)
-            %EXTRACT_LW
-            %   [ lw, xl, xr ] = extract_lw( array_line, threshold)
-            % See also MIP.extract_ler
+        %EXTRACT_LW
+        %   [ lw, xl, xr ] = extract_lw( array_line, threshold)
+        %
+        % See also MIP.extract_ler
             
             if isa(array_line,'cell')
                 error('MIP.extract_ler > please provide a valid single image');
             end
-            
             
             if threshold>max(array_line(:))
                 warning('MIP.extract_ler > threshold higher than the max value');
@@ -1067,41 +963,310 @@ classdef MIP < handle
             end
             
             lw = xr-xl;
-            
         end
         
-        
-        
-        function [ rlow ] = randlow( N,M, freq )
-            % RANDPHASE Generation of Low Frequency Noise
-            %   [ rlow ] = MIP.randlow( N,M, freq )
-            %        generates a low frequency noise matrix
-            %        of dimension NxM, with max frequency freq
-            %        (freq should be <1)
-            % Example :
-            %   lfn = randlow(100,100,0.01)
-            
-            [X,Y] = meshgrid(linspace(-1,1,N),linspace(-1,1,M));
-            
-            rlow = abs(ifft2(exp(-abs(X/freq)).*exp(-abs(Y/freq)).*exp(1i*2*pi*rand(N,M))));
+        % FIXME change freq definition
+        function [ ephi ] = speckle( N, amp)
+        % SPECKLE Generation of Low Frequency Noise (~speckle)
+        %   ephi = MIP.speckle( N, amp )
+        %   	generates a pure phase speckle NxN matrix with amplitude amp (in waves)
+        %
+        % example (generate EUV mirror speckle):
+        % 
+        %
+        %   See also MIP.GAUSSIAN, MIP.SPATIAL_FILTER
+
+            ephi = exp(1i*2*pi*randn(N)*amp);
             %imagesc(rlow); axis image
         end
         
+        %FIXME: non-square matrices
+        function Efilt = spatial_filter(E, L_m, lambda_m, NA, x_off_npc, y_off_npc)
+        %SPATIAL_FILTER Spatial filtering of an image to account for limited aperture
+        %   Efilt = spatial_filter(E, L_m,lambda_m, NA)
+        %    where E is complex field, L_m the size of the screen 
+        %    filters the object spectrum to the NA.
+        %   If NA<0, then the NA is filtered from the inside (~darkfield)
+        %
+        %   Efilt = spatial_filter(E, L_m,lambda_m, NA, x_off_npc, y_off_npc)
+        %       allows you to off-center the illumination (useful for structured illumination)
+        %
+        %
+        % % generate speckle at 13.5nm from 1Angstrom roughness over 5um
+        % E = MIP.speckle(334,2e-10/13.5e-9); 
+        % % filter the speckle through a lens of NA=0.1
+        % Efilt = MIP.spatial_filter(E, 5e-6, 13.5e-9, 0.1, 0, 0);
+        
+        % on-axis imaging
+        if ~exist('x_off_npc','var')
+            x_off_npc = 0;
+        end
+        if ~exist('y_off_npc','var')
+            y_off_npc = 0;
+        end
+        
+            % create a frequency scale
+            f_cpm = MIP.fs(linspace(-L_m/2, L_m/2, size(E,1)));
+            [Fx, Fy] = meshgrid(f_cpm);
+            
+            % find the limit imposed by the lens
+            f_max = asin(NA)/lambda_m;
+            
+            if NA>=0 %filter the lens
+                FILTER = double((Fx-f_max*x_off_npc).^2+(Fy-f_max*y_off_npc).^2<f_max.^2);
+            else % inner obscuration (~dark-field)
+                FILTER = double((Fx-f_max*x_off_npc).^2+(Fy-f_max*y_off_npc).^2>f_max.^2);
+            end
+            Efilt = MIP.ift(FILTER.*MIP.ft(E));
+            
+        end
+        
+        function I_n = shot_noise(I, N_ph)
+        %SHOT_NOISE Adds multiplicative noise to an image to emulate shot noise
+        %   I_n = MIP.shotnoise(I, N_ph)
+        %       where I is the image amplitude, and N_ph the total number
+        %       of photons accross the image
+        %
+        %   Shot noise follows a Poisson distribution, but when N_ph>20 it
+        %   can be approximated by a gaussian.
+        %
+        % See also MIP.AWG_NOISE
+       
+
+            I_ph = I./sum(I(:))*N_ph;
+            I_n = round(I_ph+sqrt(I_ph).*rand(size(I_ph)));
+        end
+        
+        function I_n = awg_noise(I,snr)
+        %AWG_NOISE Adds additive gaussian white noise to emulate camera noise
+        %   I_n = awg_noise(I, snr)
+        %       where I is the intensity of the NxN image and snr the
+        %       linear signal-to-noise ratio.
+        %
+        % Note that the definition of signal to noise ratio is discutable,
+        % since it depends on the object, really.
+        % 
+        % See also MIP.SHOT_NOISE
+        
+            noise = abs(randn(size(I)));
+            I_n = I+noise.*std(I(:))/std(noise(:))*1/snr;
+        end
+        
+        function ura = bprp(Nx_prime, Ny_prime)
+        %BPRP Generate a Binary Pseudo-Radom Pattern 
+        % (a.k.a modified Uniformly Redundant Array)
+        %   ura = bprp(N_prime) returns a 2D-BPRP of size N_prime
+        %
+        %    tips: use primes(N) to get primes!
+        %
+        % see Fenimore & Cannon "Coded aperture imaging 
+        %      with uniformly redundant arrays" dx.doi.org/10.1364/AO.17.000337
+        %       dx.doi.org/10.1364/AO.28.004344
+        %       dx.doi.org/10.1364/OE.22.019803
+        %
+        % See also MIP.RESCALE_NN
+        
+        if nargin==1
+            Ny_prime = Nx_prime;
+        end
+        
+        if ( ~isprime(Nx_prime) ||  ~isprime(Ny_prime) )
+            error('Needs two prime numbers!');
+        end
+        
+        % basic array
+        ba = zeros(Nx_prime,Ny_prime);
+        
+        % K is associated with Nx_prime and M is associated with Ny_prime.
+        
+        % a simple method to implement the equations is to evaluate mod(x^2,r) for
+        % all x from 1 to r. The resulting values give the locations (I) in Cr
+        % that contains +1. All other terms in Cr are -1.
+        Cr = zeros(1,Nx_prime)-1;
+        cr_idx = unique(sort(mod((1:Nx_prime).^2,Nx_prime)))+1;
+        Cr(cr_idx) = 1;
+        
+        Cs = zeros(1,Ny_prime)-1;
+        cs_idx = unique(sort(mod((1:Ny_prime).^2,Ny_prime)))+1;
+        Cs(cs_idx) = 1;
+        
+        for ix = 1:Nx_prime
+            for jy = 1:Ny_prime
+                if ix == 1
+                    ba(ix,jy) = 0;
+                elseif ( ix ~= 1 && jy == 1 )
+                    ba(ix,jy) = 1;
+                elseif ( Cr(ix)*Cs(jy) == 1 )
+                    ba(ix,jy) = 1;
+                else
+                    ba(ix,jy) = 0;
+                end
+            end
+        end
+        
+        %positive array
+        pa = ba.*2-1;
+        % b(1,1) has to be equal to 1 so that the sidelobes are flater:
+        pa(1,1)=1;
+
+        ura = pa;
+        end
+        
+        function nra_n = nra(N, N_try)
+        %NRA Generate NxN Non-Redundant Array (NRA) through random search
+        % NRA have the nice property of having an autocorrlation function
+        % made only of 0's and 1's (each pixel "interfere" with the others only once)
+        % see dx.doi.org/10.1364/JOSAA.28.001107
+        %
+        %   nra_n = nra(N, N_try)
+        %
+        % This is done through a random search, since I am not aware
+        % of a direct method (there are O(2^(NxN)) possibilities)
+        % When N>5 consider using MIP.NRA6 to get quick results
+        %
+        % See also MIP.NRA6
+            if N>4
+                warning('NRA search can be quite slow')
+            end
+            
+            if nargin==1
+                N_try = 65536;
+            end
+            
+            xcorr2 = @(x,y) MIP.xcorr2(x,y);
+            
+            idx = 1;
+            nra = cell(1,100);
+            for i = 1:N_try
+                ar = round(rand(N));
+                
+                test =  xcorr2(ar,ar);
+                test(N,N)=0;
+                
+                if max(test)<=1
+                    nra{idx}=ar;
+                    idx = idx+1;
+                end
+                
+            end
+            
+            n_max = 0;
+            i_max = 1;
+            for i = 1:length(nra)
+                if ~isempty(nra{i})
+                    n_max = max(n_max,sum(nra{i}(:)));
+                    i_max = i;
+                end
+            end
+            nra_n = nra{i_max};
+            
+        end
+        
+        function nra6(N)
+        %NRA6 6x6 Non-Redundant array
+        %   MIP.NRA6(N) with 1<=N<=3 returns a 6x6 NRA
+        %
+        %
+        % See also MIP.NRA
+        
+        % See González & Mejía,
+        % "Nonredundant array of apertures to measure the
+        %  spatial coherence in two dimensions with only one interferogram"
+        %  http://www.docentes.unal.edu.co/ymejiab/docs/josaa01.pdf
+        %  dx.doi.org/10.1364/JOSAA.28.001107
+            nra1 = ...
+                [1,0,0,0,1,1;
+                0,0,1,0,0,0;
+                0,0,1,0,0,1;
+                0,0,0,0,0,0;
+                0,1,0,0,0,0;
+                1,0,1,0,0,0];
+            
+            nra2 = ...
+                [0,0,1,1,0,0;
+                1,0,1,0,0,1;
+                0,0,0,0,0,0;
+                1,0,0,0,1,0;
+                0,0,0,0,0,1;
+                0,1,0,0,0,0];
+            
+            nra3 = ...
+                [1,0,0,0,1,0;
+                1,0,1,0,0,1;
+                0,0,0,0,0,0;
+                1,1,0,0,0,0;
+                0,0,0,0,1,0;
+                0,0,0,1,0,0];
+            
+            if     N==1
+                nra = nra1
+            elseif N==2
+                nra = nra2
+            elseif N==3
+                nra = nra3
+            else
+                error('Please use N<4. NRA is bad for the US of A')
+            end
+        end
+
+        
+        function [img_out] = rescale_nn( img_in, int_factor)
+        %RESCALE_NN nearest neighbour rescale with integer factor
+        %   [img_out] = rescale_nn( img_in, int_factor)
+        %
+        % See also MIP.RESCALE, MIP.BIN
+        
+        if round(int_factor)~=int_factor || int_factor<1
+            error('MIP.rescale_nn: please use an integer factor')
+        end
+        
+            N_x = size(img_in,1);
+            N_y = size(img_in,2);
+            img_out = zeros(N_x*int_factor,N_y*int_factor);
+            for ix=1:N_x
+                for iy=1:N_y
+                    img_out(((ix-1)*int_factor+1):(ix*int_factor),...
+                            ((iy-1)*int_factor+1):(iy*int_factor))...
+                            = img_in(ix,iy);
+                end
+            end
+        end
+        
+        function c = xcorr2(a,b)
+        %XCORR2 Two-dimensional cross-correlation.
+        %   XCORR2(A,B) computes the crosscorrelation of matrices A and B.
+        %   XCORR2(A) is the autocorrelation function.
+            
+        %   Author(s): M. Ullman, 2-6-86
+        %   	   J.N. Little, 6-13-88, revised
+        %   Copyright 1988-2002 The MathWorks, Inc.
+        %   $Revision: 1.9 $  $Date: 2002/11/21 15:47:07 $
+            
+            if nargin == 1
+                b = a;
+            end
+            
+            c = conv2(a, rot90(conj(b),2));
+        end
+
+
+        
         %FIXME make sure legit....
         function [ img_out ] = invert( img_in )
-            % INVERT    Image inversion
-            %   img_inverse = MIP.invert(img)
+        %INVERT Invert the tone of an image
+        %   img_inverse = MIP.invert(img)
             
             M = max(img_in(:));
             m = min(img_in(:));
             img_out = ((img_in-m)/(M-m)-0.5)*(-1)*(M-m)+m;
         end
         
+        
         function [x_d,y_d] = register(img1,img2)
-            % REGISTER Sub-pixel registration
-            %   [xd, yd] = MIP.register(img1,img2) give the distance between
-            %   two images
-            %
+        %REGISTER Sub-pixel registration fo two images
+        %   [xd, yd] = MIP.register(img1,img2) give the distance between
+        %   two images
+
             if size(img1,1) ~= size(img2,1) && size(img1,2) ~= size(img2,2)
                 error('MIP.register : the two images must be the same size')
             end
@@ -1111,53 +1276,63 @@ classdef MIP < handle
             y_d = a(3);
         end
         
-        
-        
-        %TODO incorporate better, correct zoom
-        function [h] = imagesc(varagin)
-            % IMAGESC Augmented version of imagesc (keeps zoom etc.)
-            %   [h] = MIP.imagesc(img)
+        function g = gaussian(x_px,mean_px,fwhm_px)
+        %GAUSSIAN Generates a gaussian function
+        %   g = gaussian(x_px) generates a gaussian function with zero mean
+        %       and 1 unit full-width at half-maximum
+        %   g = gaussian(x_px,mean_px,fwhm_px)
             
-            zoom_update = ~isempty(get(gcf,'Children'));
-            if zoom_update
-                h = gca;
-                if ishandle(h)
-                    x_lim = get(h,'Xlim');
-                    y_lim = get(h,'Ylim');
-                end
+            if nargin == 1
+                mean_px = 0;
+                fwhm_px = 1;
             end
-            try
-                imagesc(varagin)
-            catch err
-                if strcmp(err.identifier,'MATLAB:hg:udd_interface:goSetUDDPointerProp:CannotSetProperty')
-                    MIP.imagec(varagin)
-                else
-                    rethrow(err)
-                end
-            end
-            axis image off;
-            if zoom_update
-                set(h,'XLim',x_lim);
-                set(h,'YLim',y_lim);
-            end
+            
+            sigma_x = fwhm_px/2*sqrt(2*log(2));
+            g = exp(-((x_px-mean_px)/(sqrt(2)*sigma_x)).^2);
         end
         
-        function h = imagespec(img)
-            %IMAGESC Displays the direct spectrum intensity of an image, with dc removed
-            %   handle = MIP.imagespec(img);
-            %
-            %   See also MIP.imagec
-            
-            imagesc(MIP.remove_dc(abs(MIP.ft(img)).^2));
+        
+        
+        
+        %%% Display
+
+        function h = imagespec(varargin)
+        %IMAGESPEC Displays the direct spectrum intensity of an image
+        %   handle = MIP.imagespec(img);
+        %   handle = MIP.imagespec(img, gamma);
+        %   handle = MIP.imagespec(x, y, img);
+        %   handle = MIP.imagespec(x, y, img, gamma);
+        %
+        %
+        %   See also MIP.imagec
+        
+            gamma = 1;
+            if nargin ==1
+                img = varargin{1};
+                x = MIP.fs(1:size(img,1));
+                y = MIP.fs(1:size(img,2));
+            elseif nargin >= 3
+                x   = varargin{1};
+                y   = varargin{2};
+                img = varargin{3};
+            end
+            if nargin==2
+                gamma = varargin{2};
+            elseif nargin==4
+                gamma = varargin{4};
+            end
+            h = imagesc(x, y, abs(MIP.ft(img).^gamma));
             axis image off
         end
         
-        
+        %TODO add examples of use
         function img_rgb = hsv(img)
-            % HSV hsv scaling of the data, returned as a rgb matrix
-            % the image
-            %   img_rgb = MIP.hsv(img)
-            %   returns the MxNx3 matrix to a HSV scaling of the data.
+        %HSV hsv scaling of the data, returned as a rgb matrix of the image
+        % (This is useful when one wants to write the png of complex image
+        %   img_rgb = MIP.hsv(img)
+        %   returns the MxNx3 matrix to a HSV scaling of the data.
+        %
+        % See also MIP.IMAGEC, MIP.WRITE_PNG
             
             [N_row,N_col] = size(img);
             
@@ -1172,11 +1347,10 @@ classdef MIP < handle
         end
         
         
-        
         function img_rgb = hsv2(img)
-            % HSV2 Alternative hsv scaling of the image
-            %   img_rgb = MIP.hsv2(img)
-            %   uses a triple sine-coded hsv mapping for the data
+        %HSV2 Alternative hsv scaling of the image
+        %   img_rgb = MIP.hsv2(img)
+        %   uses a triple sine-coded hsv mapping for the data
             
             [N_row,N_col] = size(img);
             
@@ -1187,23 +1361,25 @@ classdef MIP < handle
             
             img_abs = abs(img(:)-min(img(:)))/(max(img(:))-min(img(:)));
             
-            %max(img_arg)
             %third dimension
             img_rgb(:,:,1)  = reshape(map(img_abs,3),N_row,N_col);
             img_rgb(:,:,2)  = reshape(map(img_abs,2),N_row,N_col);
             img_rgb(:,:,3)  = reshape(map(img_abs,1),N_row,N_col);
         end
         
-        %% Display
         function  jetplot(N)
-            % JETPLOT   Plot several graphs with a nice colormap
-            %   MIP.jetplot( N ) should be place before the plot
+        %JETPLOT Plot several graphs with a nice colormap
+        %   MIP.jetplot( N ) should be placed before the plot
             set(gca,'ColorOrder',jet(N),'NextPlot','ReplaceChildren')
         end
         
         
         function img_rgb = jet(img)
-            %SHARP.JET Matlab's Jet colormap
+        %JET Returns an image as RGB using Matlab's jet colormap
+        % (This is useful when one wants to write the png of on imagesc
+        %   img_rgb = jet(img)
+        %
+        % See also MIP.write_png
             
             [N_row,N_col] = size(img);
             
@@ -1216,7 +1392,6 @@ classdef MIP < handle
             
             img_abs = abs(img(:)-min(img(:)))/(max(img(:))-min(img(:)));
             
-            %max(img_arg)
             %third dimension
             img_rgb(:,:,1)  = reshape(map1(img_abs),N_row,N_col);
             img_rgb(:,:,2)  = reshape(map2(img_abs),N_row,N_col);
@@ -1225,8 +1400,16 @@ classdef MIP < handle
         
         
         function printmat(matrix,precision)
-            %PRINTMAT Print matrices to the console in a copyable form
-            %   MIP.printmat(matrix, precision)
+        %PRINTMAT Print matrices to the console in a copyable form
+        %   MIP.printmat(matrix, precision)
+        %
+        %   This is useful when one wants to share hard coded matrices
+        %   for copy paste, e.g MIP.printmat(humps(rand(3)),1) prints:
+        %
+        %   [+1.9e+01, +1.9e+01, +1.9e+01;...
+        %    +2.1e+01, +2.1e+01, +2.1e+01;...
+        %    +1.8e+01, +1.8e+01, +1.8e+01]
+        %
             
             if nargin<2
                 precision = 3;
@@ -1259,62 +1442,47 @@ classdef MIP < handle
             end
             fprintf(']\n')
         end
-        
-        
-        %FIXME not working
-        function img_rgb = bbr(img)
-            % BBR Blue-Black-Red color mapping of an image
-            %   img_rgb = MIP.bbr(img)
-            
-            [N_row,N_col] = size(img);
-            
-            %x=0:0.01:1;
-            map = @(x,delta) 0.5*(cos(2*pi*x/delta)+1);
-            %plot(x,map(x,1),x,map(x,2),x,map(x,3))
-            plot(map(0:0.1:1,1))
-            
-            img_abs = abs(img(:)-min(img(:)))/(max(img(:))-min(img(:)));
-            
-            %max(img_arg)
-            %third dimension
-            img_rgb(:,:,1)  = reshape(map(img_abs,2),N_row,N_col);
-            img_rgb(:,:,2)  = reshape(map(img_abs,3),N_row,N_col);
-            img_rgb(:,:,3)  = reshape(map(img_abs,2),N_row,N_col);
+
+        function img_rgb = image_bw(img)
+        %IMAGE_BW Returns a zero-centered RBG image
+        %
+        % See also IMAGE_BWR
+            img = img./max(img(:));
+            img_rgb(:,:,1)  = img;
+            img_rgb(:,:,2)  = img;
+            img_rgb(:,:,3)  = img;
         end
+
         
-        
-        %FIXME not working
-        function img_rgb = bwr(img)
-            % BWR   Blue-White-Red color mapping of the data
-            %   img_rgb = MIP.bwr(img)
-            %   returs the MxNx3 matrix corresponding to the colormap
-            
-            
-            %x=0:0.01:1;
-            %             map = @(x,delta) 0.5*(cos(2*pi*x/delta)+1);
-            %             %plot(x,map(x,1),x,map(x,2),x,map(x,3))
-            %             plot(map(0:0.1:1,1))
-            
+        function img_rgb = image_bwr(img)
+        %IMAGE_BWR   Blue-White-Red color mapping of the data
+        %   img_rgb = MIP.image_bwr(img)
+        %   returs the MxNx3 matrix corresponding to the colormap
+        %
+        % See also IMAGE_BW
+
             img_norm = img./(max(abs(img(:))));
             
-            img_n = img_norm.*double((img_norm<0));
-            img_p = img_norm.*double((img_norm>0));
+            img_n =-img_norm.*double((img_norm<=0));
+            img_p = img_norm.*double((img_norm>=0));
             
             %max(img_arg)
             %third dimension
-            img_rgb(:,:,1)  = 1-img_p;
-            img_rgb(:,:,2)  = 1;
-            img_rgb(:,:,3)  = 1-img_n;
+            img_rgb = zeros(size(img,1),size(img,2),3);
+            img_rgb(:,:,1)  = (1-img_n);
+            img_rgb(:,:,2)  = (1+(-img_p-img_n));
+            img_rgb(:,:,3)  = (1-img_p);
         end
         
         
         function img_rgb = imagec( img_complex )
-            % IMAGEC Image of complex image with hsv color mapping
-            %   imagec( img_complex ) displays an image where
-            %   amplitude is mapped on the value and the
-            %   phase is mapped on the hue.
-            %
-            %   See also SHARP.HSV, SHARP.COLORSCALE
+        %IMAGEC Image of complex image with hsv color mapping
+        %   imagec(img_complex) displays an image where  amplitude is mapped 
+        %   on the value and the phase is mapped on the hue.
+        %   img_rgb =imagec(img_complex) returns the corresponding RGB data,
+        %   
+        %
+        %   See also WRITE_PNG, MIP.HSV, MIP.COLORSCALE
             
             [N_row,N_col] = size(img_complex);
             
@@ -1332,18 +1500,17 @@ classdef MIP < handle
             
             if nargout == 0
                 image(img_rgb);
+                axis image
             end
-            
-            axis image
         end
         
         function img_rgb = imagecc( img_complex, ratio )
-            % IMAGECC Image of complex image with hsv color mapping
-            %   imagecc( img_complex, ratio ) displays an image where
-            %   amplitude is mapped on the value and the
-            %   phase is mapped on the hue.
-            %
-            %   See also SHARP.HSV, SHARP.COLORSCALE
+        %IMAGECC Image of complex image with hsv color mapping
+        %   imagecc( img_complex, ratio ) displays an image where
+        %   amplitude is mapped on the value and the
+        %   phase is mapped on the hue.
+        %
+        %   See also MIP.HSV, MIP.COLORSCALE
             
             if nargin == 1
                 ratio = 4; %default = quarterwave
@@ -1357,7 +1524,6 @@ classdef MIP < handle
             img_abs = abs(img_complex(:))/(max(abs(img_complex(:))));
             img_arg = angle(img_complex(:))/(2*pi)*ratio+0.5;
             
-            %max(img_arg)
             %third dimension
             img_rgb(:,:,1)  = reshape(map(img_arg,1).*abs(img_abs),N_row,N_col);
             img_rgb(:,:,2)  = reshape(map(img_arg,2).*abs(img_abs),N_row,N_col);
@@ -1373,18 +1539,31 @@ classdef MIP < handle
         
         %FIXME : axis argument
         function [ h ] = imagezc( img )
-            %SHARP.IMAGEZC Zero-Centered image display
-            %   [ h ] = imagezc( img )
-            h = image(img./max(img(:))*64);
+        %IMAGEZC Zero-Centered image display
+        %   h= imagezc(img)
+        %
+        %   if the image is unipolar (min(img)>=0), the image is displayed
+        %   in black and white, where black=0 and white=max(img)
+        %
+        %   if the image is bipolar, the image is displayed in the
+        %   darkbluered color scheme, with white being the zero level
+        %
+        % See also MIP.IMAGE_BW, MIP.IMAGE_BWR, MIP.IMAGEC
+        
+            if min(img(:))>=0
+                h = image(MIP.image_bw(img));
+            else
+                h = image(MIP.image_bwr(img));
+            end
         end
         
-        
         function cscale = colorscale(size,initial_phase,flip)
-            % SHARP.COLORSCALE Scaling of the amplitude+phase visaulization
-            %   cscale = colorscale(size) outputs an image with the
-            %   requested size
-            %
-            % See also SHARP.IMAGEC
+        %COLORSCALE Scaling of the amplitude+phase visaulization
+        %   cscale = colorscale(size) outputs an image with the
+        %   requested size
+        %
+        % See also MIP.IMAGEC
+        
             if nargin < 1;
                 size = 512;
                 initial_phase = 0;
@@ -1407,122 +1586,22 @@ classdef MIP < handle
             B = R.*exp(1i*(A+initial_phase));
             mask = R<1;
             
-            
             cscale = MIP.imagec(B.*mask);
         end
-        
-        %TODO : system agnostic,
-        %FIXME suffix in folder
-        function fiji(argin)
-            if ischar(argin)
-                folder = argin;
-            else
-                folder = '/Users/awojdyla/Documents/MATLAB/SHARP/data';
-            end
-            system(sprintf('open /Applications/Fiji.app %s%s%s',folder,strtrim(meta.image_dir(15:end)),strtrim(meta.image_name)))
-        end
-        
-        function open_folder(argin)
-            if ischar(argin)
-                folder = argin;
-            else
-                folder = '/Users/awojdyla/Documents/MATLAB/SHARP/data';
-            end
-            system(sprintf('open  %s%s',folder,strtrim(meta.image_dir(15:end))))
-        end
-        
-        
-        function addTick(value)
-            %SHARP.ADDTICK Add a tick to the current plot on the x-axis
-            set(gca,'XTick',sort([get(gca,'XTick') value]))
-        end
-        
-        
-        %TODO implement properly
-        function imgs_out = add_slider(imgs_in)
-            % ADD_SLIDER Showing sliders on images of a focus stack
-            %   imgs_out = add_slider(imgs_in)
-            %   imagesc(MIP.add_slider(img_in){1})
-            N = length(imgs_in);
-            roi_size_px = size(imgs_in{1},1);
-            imgs_out = imgs_in;
-            for idx = 1:N
-                wid = floor(roi_size_px/(N));
-                pos = floor((idx-1)*wid)+1;
-                imgs_out{idx}(end-round(roi_size_px/16):end,:) = 0;
-                imgs_out{idx}(end-round(roi_size_px/16):end,pos:(pos+wid)) = max(imgs_out{idx}(:));
-            end
-        end
-        
-        function title(varargin)
-            %SHARP.TITLE EZ title labelling
-            % MIP.title(i) will add a title to the gca with i printed
-            title_arg = '.';
-            for i = 1:nargin
-                title_arg = strcat(title_arg,...
-                    sprintf('. %0+2.2f . ',varargin{i}));
-            end
-            title(strcat(title_arg,'.'))
-        end
-        
-        
-        function [ cmap ] = colormap_bluetored( n_level )
-            %DKBLUERED Summary of this function goes here
-            %   Detailed explanation goes here
-            
-            if nargin < 1
-                n_level = size(get(gcf,'colormap'),1);
-            end
-            
-            r = linspace(0,1,n_level);
-            g = zeros(1,n_level);
-            b = linspace(1,0,n_level);
-            
-            cmap = [r' g' b'];%.*(1-L*0.5);
-            
-            if nargin == 0
-                colormap(cmap)
-            end
-            
-        end
-        
-        function [ cmap ] = colormap_dkbluered( n_level )
-            %DKBLUERED Summary of this function goes here
-            %   Detailed explanation goes here
-            if nargin < 1
-                n_level = size(get(gcf,'colormap'),1);
-            end
-            
-            cmap = ones(n_level,3);
-            
-            x=1:n_level;
-            r = min(0,(x/n_level-1/2))*2;
-            g = -(-x/n_level+1/2).*sign(-x/n_level+1/2)*2;
-            b = min(0,(-x/n_level+1/2))*2;
-            l = abs(x-n_level/2)/n_level;
-            L=repmat(l,3,1)';
-            
-            
-            cmap = (cmap + [r' g' b']).*(1-L*0.5);
-            
-            if nargin == 0
-                colormap(cmap)
-            end
-        end
-        
+
         
         function filename = print(idx)
-            % SHARP.PRINT Prints the current figure into the current folder
-            %   MIP.print(idx);
-            %   prints the current current figure using the unix timestamp
-            %   and its index
-            %
-            % Example :
-            % x=-2:0.1:2
-            % for i=10
-            %   plot(1:10, x.^i)
-            %   MIP.print(i)
-            % end
+        %PRINT Prints the current figure into the current folder
+        %   MIP.print(idx);
+        %   prints the current current figure using the unix timestamp
+        %   and its index
+        %
+        % Example :
+        % x=-2:0.1:2
+        % for i=10
+        %   plot(1:10, x.^i)
+        %   MIP.print(i)
+        % end
             
             if nargin==0
                 idx = 0;
@@ -1548,10 +1627,10 @@ classdef MIP < handle
         end
         
         function filename = print2(font_size, linewidth)
-            % SHARP.PRINT2 Prints the current figure into the current folder
-            %   MIP.print(idx);
-            %   prints the current current figure using the unix timestamp
-            %   and its index
+        %PRINT2 Prints the current figure into the current folder
+        %   MIP.print(idx);
+        %   prints the current current figure using the unix timestamp
+        %   and its index
             
             filename = sprintf('%s', datestr(now,'yyyymmddhhMMSS'));
             
@@ -1581,6 +1660,12 @@ classdef MIP < handle
         
         %FIXME : overwrite check
         function write_png(img, filename, folder)
+        %WRITE_PNG
+        %   MIP.write_png(img, filename, folder)
+        %   saves the B&W or RGB image to a filename inide a specific folder
+        %
+        % See also MIP.WRITE_HDF5, MIP.WRITE_KIF
+        
             current_folder = pwd;
             
             if nargin == 3
@@ -1611,15 +1696,16 @@ classdef MIP < handle
         end
         
         function write_hdf5(img, filename, folder)
-            % WRITE_HDF5    Write complex data using HDF5 file format
-            %   MIP.write_hdf5(img, filename)
-            %   writes the complex image into the current folder
-            %
-            %   MIP.write_hdf5(img, filename, folder)
-            %   writes the complex image into a specific folder
-            
-            %going to the destination folder, if needed
-            
+        %WRITE_HDF5    Write complex data using HDF5 file format
+        %   MIP.write_hdf5(img, filename)
+        %   writes the complex image into the current folder
+        %
+        %   MIP.write_hdf5(img, filename, folder)
+        %   writes the complex image into a specific folder
+        %
+        % See also MIP.READ_HDF5, MIP.WRITE_PNG, MIP.WRITE_KIF
+
+        %going to the destination folder, if needed
             if nargin == 3
                 current_folder = pwd;
                 cd(folder)
@@ -1644,11 +1730,11 @@ classdef MIP < handle
         
         
         function img = read_hdf5(filename)
-            % READ_HDF5 Reads complex data encoded in HDF5 file format
-            %   img = MIP.read_hdf5(filename)
-            %   read the complex image using its filename
-            %
-            % See also MIP.write_hdf5
+        %READ_HDF5 Reads complex data encoded in HDF5 file format
+        %   img = MIP.read_hdf5(filename)
+        %   read the complex image using its filename
+        %
+        % See also MIP.WRITE_HDF5
             
             %info  = hdf5info(filename);
             try
@@ -1662,18 +1748,19 @@ classdef MIP < handle
         
         %overwrite protection
         function k = write_kif( filename, x, y)
-            % WRITE_KIF Write Ken-Iacopo interchange Format files
-            %   fid = MIP.write_kif(filename);
-            %   x is the real part of the data and y is the imaginary part (if any)
-            %
-            % See also MIP.write_kif, MIP.read_kif, MIP.read_kifc
+        %WRITE_KIF Write Ken-Iacopo Interchange Format files
+        %   fid = MIP.write_kif(filename);
+        %   x is the real part of the data and y is the imaginary part (if any)
+        %
+        % See also MIP.READ_KIF, MIP.WRITE_KIFC
+
+        % I Mochi
             
-            % I Mochi
-            
-            %converting to a row major environment
-            % A wojdyla Sept'15
-            x=x';
-            y=y';
+        %converting to a row major environment
+        % A wojdyla Sept'15
+        
+            x=x.';
+            y=y.';
             
             if nargin == 2
                 re = real(x);
@@ -1698,20 +1785,21 @@ classdef MIP < handle
         
         
         function k = write_kifc( filename, aeiphi )
-            %  WRITE_KIFV Write Ken-Iacopo interchange Format files
-            %   fid = MIP.write_kifc(filename,img_complex);
-            %   x is the real part of the data and y is the imaginary part (if any)
+        %  MIP.WRITE_KIFC Write Ken-Iacopo interchange Format files
+        %   fid = MIP.write_kifc(filename,img_complex);
+        %   x is the real part of the data and y is the imaginary part (if any)
             
             k = MIP.write_kif( filename, real(aeiphi), imag(aeiphi));
         end
         
         function [x,y] = read_kif( filename )
-            % READKIF Read Ken-Iacopo Interchange format
-            %   [x,y] = MIP.read_kif(filename);
-            %   x is the real part of the data and y is the imaginary part (if any)
-            % See also MIP.read_kifc, MIP.write_kif, MIP.write_kifc
-            
-            % I Mochi
+        %READ_KIF Read Ken-Iacopo Interchange format
+        %   [x,y] = MIP.read_kif(filename);
+        %   x is the real part of the data and y is the imaginary part (if any)
+        %
+        % See also MIP.READ_KIFC, MIP.WRITE_KIF
+
+        % I Mochi
             
             if length(filename)<4 || ~strcmp(filename(end-3:end),'.kif')
                 filename = strcat(filename,'.kif');
@@ -1733,106 +1821,20 @@ classdef MIP < handle
         end
         
         function aeiphi = read_kifc( filename )
-            % READKIFC Read Ken-Iacopo Interchange format, complex output
-            %   [img_complex] = MIP.read_kifc(filename);
-            %
+        %READ_KIFC Read Ken-Iacopo Interchange format, complex output
+        %   [img_complex] = MIP.read_kifc(filename);
+        %
+        %   See also MIP.WRITE_KIFC, MIP.READ_KIF
             
             [re,im] = MIP.read_kif(filename);
             aeiphi = re+1i*im;
         end
-        
-        
-        %FIXME : something's wrong here...
-        %TODO : work with 3D arrays
-        function export2gif(img_cell)
-            % EXPORT2GIF    Creates a GIF with the images in the cell
-            %   export2gif(img_cell) exports all the frames of img_cell as
-            %   a gif in the current folder
-            %
-            % See also MIP.tile_cell, MIP.add_slider
-            
-            h = figure('Position',[0 0 size(img_cell{1},1) size(img_cell{1},1)]);
-            set(gca,'position',[0 0 1 1],'units','normalized');
-            colormap gray
-            
-            filename = sprintf('%s_%04.0f', datestr(now,'yyyymmddhhMMSS'));
-            
-            for i = 1:length(img_cell)
-                imagesc(img_cell{i})
-                axis image off
-                drawnow
-                frame = getframe(h);
-                im = frame2im(frame);
-                [imind,cm] = rgb2ind(im,256);
-                if i == 1;
-                    imwrite(imind,cm,filename,'gif', 'Loopcount',inf,'DelayTime',0.2);
-                else
-                    imwrite(imind,cm,filename,'gif','WriteMode','append');
-                end
-            end
-            close(h)
-            
-            %             for i=length(images_cell)
-            %                 %imagesc(images_cell{i},'Parent',aTemp)
-            %                 imagesc(images_cell{i},'Parent',aTemp)
-            %                 axis(aTemp,'image','off')
-            %                 drawnow
-            %
-            %                 frame = getframe(hTemp);
-            %                 im = frame2im(frame);
-            %                 [A,map] = rgb2ind(im,256);
-            %                 if i == 1;
-            %                     imwrite(A,map,filename,'gif','LoopCount',Inf,'DelayTime',1);
-            %                 else
-            %                     imwrite(A,map,filename,'gif','WriteMode','append','DelayTime',1);
-            %                 end
-            %                 close(hTemp)
-            %             end
-        end
-        
-        
-        
-        %TODO : refresh
-        function tofig(filename)
-            % TOFIG     Write the current figure into a fig and a eps file
-            %   MIP.tofig(filename)
-            %   writes the current figure into a fig and a eps file
-            
-            current_path = pwd;
-            if nargin == 0
-                cd(MIP.save_folder);
-            end
-            
-            
-            set(findobj('Type','Line'),'LineWidth',2);
-            set(gca,'Box','off')
-            set(gca,'LineWidth',0.5);
-            set(get(gca,'YLabel'),'FontSize',20);
-            set(get(gca,'XLabel'),'FontSize',20);
-            set(get(gca,'ZLabel'),'FontSize',20);
-            set(get(gca,'title'),'FontSize',20);
-            set(legend, 'FontSize',20)
-            
-            try
-                print(gcf,filename,'-depsc');
-                saveas(gcf,filename,'fig')
-            catch err
-                rethrow(err)
-                cd(current_path)
-            end
-            cd(current_path)
-            
-        end
-        
-        function t = test(in)
-            fprintf('MIP.test\n')
-        end
-        
-        
+
+        %TODO document
         function img_resized = resize2(img,x_size_px,y_size_px)
-            % RESIZE2    Resize an image using FFT
-            %   img_resized = MIP.resize2(img, size_px)
-            %   img_resized = MIP.resize2(img, x_size_px, y_size_px)
+        %RESIZE2  Resize an image using FFT
+        %   img_resized = MIP.resize2(img, size_px)
+        %   img_resized = MIP.resize2(img, x_size_px, y_size_px)
             
             if nargin==2
                 if size(img,1)==size(img,2)
@@ -1853,193 +1855,21 @@ classdef MIP < handle
             end
         end
         
-        
-        %FIXME there is a small lateral shift after each iterations...:(
-        %FIXME not fully tested, expect funny results
-        %TODO : allow for complex and NxMx3
-        function [ img_rotated ] = rotate2( img, angle_deg )
-            %ROTATE2     Rotate an image using HQAFIR algorithm
-            %   img_rotate = MIP.rotate(img,angle_deg)
-            %   rotates the image by the specified angle, ccw.
-            
-            % base on the algorithm described in
-            % "High Quality Alias Free Image Rotation", Charles B Owen (1996)
-            % it seems that the rotation causes a one-pixel shift of the
-            % image; probably something to do with the (i)fftshifts
-            
-            if ~isreal(img)
-                %error('MIP.rotate : the image cannot be complex')
-                img_rotated = abs(MIP.rotate2(abs(img),angle_deg)).*...
-                    exp(1i.*MIP.rotate(angle(img),angle_deg));
-                disp('mama')
-            else
-                angle_rad = angle_deg*pi/180;
-                N_row = size(img,1);
-                N_col = size(img,2);
-                Np =  2*N_row;ceil(N_row*(1+tan(angle_rad/2).^2));
-                Npp = 2*N_col;
-                
-                img_rotated = MIP.pad2(img,N_row,Np);
-                [Fx1,Fy1] = meshgrid((1:Np)-Np/2,(1:N_col)-N_col/2);
-                delta = tan(angle_rad/2);
-                SKEW1 = exp(2*1i*pi*(Fx1.*Fy1)*delta/Np);
-                IMG_ROT = fftshift(fft(ifftshift(img_rotated,2),[],2),2).*SKEW1;
-                
-                IMG_ROT2 = fftshift(fft(ifftshift(IMG_ROT,1),[],1),1);
-                IMG_ROT2_PAD = pad2(IMG_ROT2,Npp,Np);
-                IMG_ROT3 = fftshift(ifft(ifftshift(IMG_ROT2_PAD,2),[],2),2);
-                delta2 = -2*sin(angle_rad);
-                [Fx2,Fy2] = meshgrid((1:Np)-Np/2,(1:Npp)-Npp/2);
-                SKEW2 = exp(2*1i*pi*(Fx2.*Fy2)*delta2/Np);
-                IMG_ROT4 = IMG_ROT3.*SKEW2;
-                
-                IMG_ROT5 = fftshift(fft(ifftshift(IMG_ROT4,1),[],1),1);
-                IMG_ROT6 = fftshift(ifft(fftshift(IMG_ROT5,2),[],2),2);
-                delta3 = -tan(angle_rad/2)/2;
-                [Fx3,Fy3] = meshgrid((1:Np)-Np/2,(1:Npp)-Npp/2);
-                SKEW3 = exp(-2*1i*pi*(Fx3.*Fy3)*delta3/Npp);
-                IMG_ROT7 = IMG_ROT6.*SKEW3;
-                
-                IMG_ROT8 = fftshift(ifft(ifftshift(IMG_ROT7,2),[],2),2);
-                img_rotated = fliplr(flipud(abs(crop2((IMG_ROT8(1:2:end,:)),N_row,N_col))));
-            end
-        end
-        
-        function [aerial, params] = import_hyperlith(filename)
-            %IMPORT_HYPERLITH Import aerial images from Hyperlith export txt files
-            %   [{aerial}, {params}] = import_hyperlith(filename)
-            %
-            % See also ...
-            
-            %open the file
-            fid = fopen(filename);
-            
-            %set image index to zero
-            idx = 1;
-            
-            %scan the first line (for template)
-            c = fgetl(fid);
-            
-            % the first line line looks like
-            % 'biasx_nm=-20.0, biasy_nm=-20.0,defocus=-3600.0'
-            % so we can split the parameters at the colon
-            d = strsplit(c,',');
-            % that's how we know how many parameters
-            N_params = length(d);
-            params = {};
-            % let's populate the parameters' cell with a struct
-            for i=1:N_params
-                %split every sub-string at the equal sign
-                % e.g. 'biasx_nm=-20.0'
-                e = strsplit(d{i},'=');
-                %remove spaces (field names should not have leading spaces)
-                field = strtrim(strrep(strrep(e{1},']',''),'[',''));
-                %populate the first field
-                if i==1
-                    field1=field;
-                    params{idx}.(field) = str2double(e{2});
-                else
-                    %and all the others
-                    params{idx} = setfield(params{idx},field,str2double(e{2}));
-                end
-            end
-            
-            % let's loop over the file
-            idx_r = 1;
-            c = fgetl(fid);
-            
-            % if there is still something to read, go on
-            while ~(~ischar(c) && c==-1)
-                if isempty(c)
-                    % do nothing
-                else
-                    %if the line has non-numeral characters, populated the
-                    %params
-                    if strcmp(c(1:3),field1(1:3))
-                        %increment the counter (new data)
-                        idx = idx+1;
-                        %there will be a new aerial image,
-                        % so set the row count to one
-                        idx_r = 1;
-                        %see above for explanations
-                        d = strsplit(c,',');
-                        for i=1:N_params
-                            e = strsplit(d{i},'=');
-                            field = strtrim(strrep(strrep(e{1},']',''),'[',''));
-                            if i==1
-                                params{idx}.(field) = str2double(e{2});
-                            else
-                                params{idx} = setfield(params{idx},field,str2double(e{2}));
-                            end
-                        end
-                    else
-                        % read data
-                        aerial{idx}(idx_r,:) = str2num(c);
-                        %increment row counter (in case it's 2D data)
-                        idx_r = idx_r+1;
-                    end
-                end
-                %read next line
-                c = fgetl(fid);
-            end
-            %close the file
-            fclose(fid);
-        end
-        
-        
-        function [time_s,pos1_um,pos2_um] = import_pico2(filename, startRow, endRow)
-            %IMPORT_PICO2 Import numeric data from a text file as column vectors.
-            %   [TIME_S,POS1_UM,POS2_UM] = IMPORTFILE(FILENAME) Reads data from text
-            %   file FILENAME for the default selection.
-            %
-            %   [TIME_S,POS1_UM,POS2_UM] = IMPORTFILE(FILENAME, STARTROW, ENDROW) Reads
-            %   data from rows STARTROW through ENDROW of text file FILENAME.
-            %
-            % Example:
-            %   [time_s,pos1_um,pos2_um] = importfile('tap test',2, 31200);
-            %
-            
-            % Auto-generated by MATLAB on 2016/08/11 16:17:42
-            
-            delimiter = '\t';
-            if nargin<=2
-                startRow = 2;
-                endRow = inf;
-            end
-            
-            formatSpec = '%f%f%f%*s%[^\n\r]';
-            
-            fileID = fopen(filename,'r');
-            
-            dataArray = textscan(fileID, formatSpec, endRow(1)-startRow(1)+1, 'Delimiter', delimiter, 'EmptyValue' ,NaN,'HeaderLines', startRow(1)-1, 'ReturnOnError', false);
-            for block=2:length(startRow)
-                frewind(fileID);
-                dataArrayBlock = textscan(fileID, formatSpec, endRow(block)-startRow(block)+1, 'Delimiter', delimiter, 'EmptyValue' ,NaN,'HeaderLines', startRow(block)-1, 'ReturnOnError', false);
-                for col=1:length(dataArray)
-                    dataArray{col} = [dataArray{col};dataArrayBlock{col}];
-                end
-            end
-            
-            fclose(fileID);
-            time_s = dataArray{:, 1};
-            pos1_um = dataArray{:, 2};
-            pos2_um = dataArray{:, 3};
-        end
-        
-        
         function [ centro ] = centroid( x,y )
-            %CENTROID Centroid computation in one dimension (first moment)
-            %   cent = centroid( x,y )
-            %
-            % A Wojdyla (awojdyla@lbl.gov), June 2013
+        %CENTROID Centroid computation in one dimension (first moment)
+        %   cent = MIP.centroid( x,y )
+        %
+        % See also MIP.CENTROID2
+            
             centro = trapz(x.*y)./trapz(y);
         end
         
         function [ xc_px, yc_px] = centroid2( img )
-            %CENTROID Centroid computation in one dimension (first moment)
-            %   cent = centroid( x,y )
-            %
-            % A Wojdyla (awojdyla@lbl.gov), June 2013
+        %CENTROID2 Centroid computation in two dimension
+        %   cent = MIP.centroid2( x,y )
+        %
+        %   See also MIP.CENTROID
+
             if ~isa(img,'cell')
                 im_tmp = img;
                 img = cell(1);
@@ -2061,57 +1891,26 @@ classdef MIP < handle
             end
         end
         
-        function [ xc_px, yc_px] = cross_center( img )
-            %CROSS_CENTER Find the centre of a symmtrical pattern
-            %   [ xc_px, yc_px] = cross_center( {img} )
-            %
-            % See also MIP.fid_center
-            
-            if ~isa(img,'cell')
-                im_tmp = img;
-                img = cell(1);
-                img{1} = im_tmp;
-            end
-            
-            roi_size_x = size(img{1},1);
-            roi_size_y = size(img{1},2);
-            x_px = (-roi_size_x/2:roi_size_x/2-1);
-            y_px = (-roi_size_y/2:roi_size_y/2-1);
-            
-            xc_px = zeros(1,length(img));
-            yc_px = zeros(1,length(img));
-            for i_m =1:length(img)
-                img_x = sum(img{i_m},1)/mean(sum(img{i_m},1));
-                img_y = sum(img{i_m},2)/mean(sum(img{i_m},2));
-                m_x = img_x>1.5;
-                m_y = img_y>1.5;
-                xc_px(i_m) = MIP.centroid(x_px(m_x),img_x(m_x));
-                yc_px(i_m) = MIP.centroid(y_px(m_y),img_y(m_y)');
-            end
-        end
-        
-        
-        
-        %% Fourier Optics
+        % Fourier Optics
         
         function u_out=propTF(u_in,L,lambda,z)
-            %SHARP.PROPTF Fourier optics propagation using Transfer Function kernel method
-            %   u_out=MIP.propTF(u_in,L,lambda,z)
-            %
-            %     propagation - transfer function approach
-            %     assumes same x and y side lengths and
-            %     uniform sampling
-            %     u1 - source plane field
-            %     L - source and observation plane side length
-            %     lambda - wavelength
-            %     z - propagation distance
-            %     u2 - observation plane field
-            %
-            % See also SHARP.PROPIR, SHARP.PROPFF, SHARP.TILT, SHARP.LENS
-            
-            %December 2012
-            %Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
-            %adapted from 'Computational Fourier Optics' chap V.2
+        %PROPTF Fourier optics propagation using Transfer Function kernel method
+        %   u_out=MIP.propTF(u_in,L,lambda,z)
+        %
+        %     propagation - transfer function approach
+        %     assumes same x and y side lengths and
+        %     uniform sampling
+        %     u1 - source plane field
+        %     L - source and observation plane side length
+        %     lambda - wavelength
+        %     z - propagation distance
+        %     u2 - observation plane field
+        %
+        % See also MIP.PROPIR, MIP.PROPFF, MIP.TILT, MIP.LENS
+
+        % December 2012
+        % Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
+        % adapted from 'Computational Fourier Optics' chap V.2
             
             [M,~]=size(u_in); %get input field array size
             dx=L/M; %sample interval
@@ -2132,22 +1931,22 @@ classdef MIP < handle
         
         
         function u2 = propIR(u1,L,lambda,z)
-            %SHARP.PROPIR Fourier Optics propagation using Impulse Response kernel method
-            %
-            %     propagation - impulse response approach
-            %     assumes same x and y side lengths and
-            %     uniform sampling
-            %     u1 - source plane field
-            %     L - source and observation plane side length
-            %     lambda - wavelength
-            %     z - propagation distance
-            %     u2 - observation plane field
-            %
-            % See also SHARP.PROPTF, SHARP.PROPFF, SHARP.TILT, SHARP.LENS
-            
-            %December 2012
-            %Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
-            %adapted from 'Computational Fourier Optics' chap V.2
+        %PROPIR Fourier Optics propagation using Impulse Response kernel method
+        %
+        %     propagation - impulse response approach
+        %     assumes same x and y side lengths and
+        %     uniform sampling
+        %     u1 - source plane field
+        %     L - source and observation plane side length
+        %     lambda - wavelength
+        %     z - propagation distance
+        %     u2 - observation plane field
+        %
+        % See also MIP.PROPTF, MIP.PROPFF, MIP.TILT, MIP.LENS
+
+        %December 2012
+        %Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
+        %adapted from 'Computational Fourier Optics' chap V.2
             
             [M,~]=size(u1); %get input field array size
             dx=L/M; %sample interval
@@ -2168,24 +1967,24 @@ classdef MIP < handle
         
         
         function [uout] = tilt(uin,L,lambda,alpha,theta)
-            %SHARP.TILT Tilts the phase modulation equivalent to a tilt
-            %   u_out = MIP.tile(u_in,L,lambda,alpha,theta)
-            % where u_in is the inital EM field
-            %          L is the screen diameter
-            %          lambda is the wavelength (in screen units)
-            %          alpha is the azimuthal angle(rad)
-            %          theta is the other angle (rad)
-            %
-            % See also SHARP.LENS, SHARP.PROPTF, SHARP.PROPIR, SHARP.PROPFF
-            
-            % tilt phasefront
-            % uniform sampling assumed
-            % uin - input field
-            % L - side length
-            % lambda - wavelength
-            % alpha - tilt angle
-            % theta - rotation angle (x axis 0)
-            % uout - output field
+        %TILT Tilts the phase modulation equivalent to a tilt
+        %   u_out = MIP.tile(u_in,L,lambda,alpha,theta)
+        % where u_in is the inital EM field
+        %          L is the screen diameter
+        %          lambda is the wavelength (in screen units)
+        %          alpha is the azimuthal angle(rad)
+        %          theta is the other angle (rad)
+        %
+        % See also MIP.LENS, MIP.PROPTF, MIP.PROPIR, MIP.PROPFF
+
+        % tilt phasefront
+        % uniform sampling assumed
+        % uin - input field
+        % L - side length
+        % lambda - wavelength
+        % alpha - tilt angle
+        % theta - rotation angle (x axis 0)
+        % uout - output field
             
             %from 'Computational Fourier Optics' chap VI.1
             %should be alpha<lambda*.(0.5/dx-B), where B is the bandwidth of the source
@@ -2202,15 +2001,15 @@ classdef MIP < handle
         
         
         function u_out = lens(u_in,L,lambda,zf,diam)
-            %SHARP.LENS Creates the phase modulation of a lens
-            %   u_out = MIP.lens(u_in,L,lambda,zf,diam)
-            % where u_in is the inital EM field
-            %          L is the screen diameter
-            %          lambda is the wavelength (in screen units)
-            %          zf is the ocal distance  (in screen units)
-            %          diam is the diameter of the lens (in screen units)
-            %
-            % See also SHARP.TILT, SHARP.PROPTF, SHARP.PROPIR, SHARP.PROPFF
+        %LENS Creates the phase modulation of a lens
+        %   u_out = MIP.lens(u_in,L,lambda,zf,diam)
+        %   where u_in is the inital EM field
+        %          L is the screen diameter
+        %          lambda is the wavelength (in screen units)
+        %          zf is the ocal distance  (in screen units)
+        %          diam is the diameter of the lens (in screen units)
+        %
+        % See also MIP.TILT, MIP.PROPTF, MIP.PROPIR, MIP.PROPFF
             
             % should be zf/diam>dx/lambda
             
@@ -2233,51 +2032,320 @@ classdef MIP < handle
             u_out=u_in.*exp(-1i*k/(2*zf)*(X.^2+Y.^2)).*double(sqrt(X.^2+Y.^2)<diam/2); %apply focus
         end
         
-        %% Aberrations
+        function [uq, xq_m] = propHF(up, xp_m, xq_m, lambda_m, z_m, option)
+        %PROPFH Huygens-Fresnel propagation
+        % u_out = propHF(u_in, x_in_m, x_out_m, lambda, z_m)
+        % u_out = propHF(u_in, x_in_m, x_out_m, lambda, z_m, 'off')
+        %   removes the normalization
+        %
+        %   This function can be quite slow, consider MIP.PROPTF for speed
+        %
+        % See also MIP.PROPTF, MIP.PROPIR
+            Np = length(xp_m);
+            Nq = length(xq_m);
+            uq = zeros(1,Nq);
+            
+            % propagation
+            for iq = 1:Nq
+                r_m = sqrt((xq_m(iq)+xp_m).^2+z_m.^2);
+                uq(iq) = sum(up.*exp(1i*2*pi*r_m/lambda_m)./r_m);
+            end
+            
+            % normalization
+            if nargin<6 || ~strcmp(option,'off')
+                uq = uq./sqrt(sum(abs(uq).^2));
+                uq = uq.*sqrt(sum(abs(up).^2));
+            end
+        end
+        
+        %%%% Aberrations
+
+        function [a, order_x, order_y] = generate_polynomials(order, Np_x, Np_y)
+        %GENERATE_POLYNOMIALS Generate 2D polynomials
+        %   [a, order_x, order_y] = generate_polynomials(order, Np_x, Np_y)
+        %
+        %   See also MIP.GENERATE_BASIS, MIP.GENERATE_WEIGHED_POLYNOMIALS
+        
+            Nxy = ((order + 1) * (order + 2) / 2);
+            
+            % % Generate a polynomial basis
+            index = 1;
+            xn = linspace(-1, 1, Np_x);
+            yn = linspace(-1, 1, Np_y);
+            
+            [Xn, Yn] = meshgrid(xn, yn);
+            order_x = zeros(1,Nxy);
+            order_y = zeros(1,Nxy);
+            a = zeros(Np_y, Np_x, Nxy);
+            for i=0:order
+                for q=0:i
+                    
+                    ix = i-q;
+                    order_x(index) = ix;
+                    
+                    iy = q;
+                    order_y(index) = iy;
+                    
+                    a(:,:,index) = power(Xn, ix).*power(Yn, iy);
+                    index = index + 1;
+                end
+            end
+        end
+        
+        function weight_ngauss = generate_gaussian_weight(X_m, Y_m, sigma_x, sigma_y)
+        %GENERATE_GAUSSIAN_WEIGHT Generate a HHLO beam amplitude profile
+        %   weight_ngauss = generate_gaussian_weight(X_m, Y_m)
+        %       generates a standard HHLO profile
+        %   weight_ngauss = generate_gaussian_weight(X_m, Y_m, sigma_x, sigma_y)
+        %       generates a gaussian profile with specified variance
+        %
+        %   See also MIP.GENERATE_BASIS
+        
+            if ~exist('sigma_x',1)
+                sigma_x = 1;
+            end
+            if ~exist('sigma_y',1)
+                sigma_y = 1;
+            end
+            mu_x = 0;
+            mu_y = 0;
+            
+            % Define a gaussian
+            gauss = exp(-((X_m-mu_x)./(sqrt(2)*sigma_x)).^2-((Y_m-mu_y)./(sqrt(2)*sigma_y)).^2);
+            % take the square root (intensity->amplitude)
+            gauss_weight = sqrt(gauss);
+            % normalize to get a proper weight definition
+            weight_ngauss = gauss_weight./sum(gauss_weight(:));
+        end
         
         
+        function w_basis = generate_basis(polynomials, weight)
+        %GENERATE_BASIS Generates an orthonormal basis from basis function
+        %   basis = generate_basis(polynomials)
+        %       creates an orthogonal basis with unitary weighting
+        %   w_basis = generate_basis(polynomials, weight)
+        %       creates an orthogonal basis using defined weighting 
+        %
+        % See also MIP.PROJECT_ON_BASIS, MIP.CHECK_ORTHOGONALITY,
+        %          MIP.GENERATE_POLYNOMIALS
+
+            if nargin<2
+                weight = 1;
+            end
+            
+            %orthonormalization
+            Nxy = size(polynomials,3);
+            w_basis = polynomials;
+            w_basis(:,:,1) = w_basis(:,:,1)./sqrt(sum(sum(weight.*w_basis(:,:,1).* w_basis(:,:,1))));
+            for i = 2:Nxy
+                for j=1:(i-1)
+                    %orthonality
+                    w_basis(:,:,i) = w_basis(:,:,i)-w_basis(:,:,j).*sum(sum(weight.*w_basis(:,:,i).*w_basis(:,:,j)))./sum(sum(weight.*w_basis(:,:,j).* w_basis(:,:,j)));
+                    %unitarity
+                    w_basis(:,:,i) = w_basis(:,:,i)./sqrt(sum(sum(weight.*w_basis(:, :, i).*w_basis(:,:,i))));
+                end
+            end
+        end
+        
+        function projection = project_on_basis(vector, basis, weight)
+        %PROJECT_ON_BASIS Projects a vector on an (orthonormal) basis
+        %   projection = project_on_basis(vector, basis)
+        %   projection = project_on_basis(vector, basis, weight)   
+        %       does the same with defined weighing
+        %
+        % See also MIP.GENERATE_BASIS, MIP.CHECK_ORTHOGONALITY,
+        %          MIP.GENERATE_POLYNOMIALS
+        
+            if nargin<3
+                weight = 1;
+            end
+            
+            Nxy = size(basis,ndims(basis));
+            projection = zeros(1,Nxy);
+            for i = 1:Nxy
+                projection(i) = sum(sum(weight.*vector.*basis(:,:,i)));
+            end
+        end
+        
+        function auto_product = check_orthogonality(basis, weight)
+        %CHECK_ORTHOGONALITY Checks the orthogonality of the basis
+        %   auto_product = check_orthogonality(basis)
+        %   auto_product = check_orthogonality(basis, weight)
+        %
+        % See also MIP.GENERATE_BASIS, MIP.PROJECT_ON_BASIS,
+        %          MIP.GENERATE_POLYNOMIALS
+        
+            if nargin<2
+                weight = 1;
+            end
+            
+            Nxy = size(basis,ndims(basis));
+            auto_product = zeros(Nxy);
+            for i = 1:Nxy
+                auto_product(:,i) = MIP.project_on_basis(weight.*basis(:,:,i),basis);
+            end
+        end
+        
+        function w_polynomials = generate_weighed_polynomials(polynomials, weight)
+        %GENERATE_WEIGHED_POLYNOMIALS Generate polynomials with a weight
+        %   w_polynomials = generate_weighed_polynomials(polynomials, weight)
+        % 
+        %   See also MIP.GENERATE_POLYNOMIALS, MIP.GENERATE_BASIS, MIP.PROJECT_ON_BASIS,     
+            
+            Np_y = size(polynomials,1);
+            Np_x = size(polynomials,2);
+            Nxy  = size(polynomials,3);
+            w_polynomials = zeros(Np_y, Np_x, Nxy);
+            for i=1:Nxy
+                w_polynomials(:,:,i) = polynomials(:,:,i).*weight;
+            end
+            
+        end
+        
+        function opde_wave = opde(aberration_rad, weight)
+        %OPDE Computes the weighed RMS Optical path difference error
+        %   opde_wave = opde(aberration_rad, weight)
+        
+            weight = weight(:)./sum(weight(:));
+            opde_wave=sqrt(sum(weight(:).*(aberration_rad(:)-sum(weight(:).*aberration_rad(:))).^2));
+        end
+        
+        function [coeff, polyquad] = best_fit(X_m, Y_m, aberration_rad, weight)
+        %BEST_FIT Best 2D quadratic fit (X^2) of the wavefront
+        %   [coeff, polyquad] = best_fit(X_m, Y_m, aberration_rad)
+        %       performs the fit with uniform weighing
+        %   [coeff, polyquad] = best_fit(X_m, Y_m, aberration_rad, weight)
+        %       performs the fit with defined weighing
+       
+            x = X_m(:);
+            y = Y_m(:);
+            w = weight(:);
+            
+            polynomial = [w.*x.^0, w.*x.^2.*y.^2];
+        
+            coeffs =  polynomial \ (aberration_rad(:).*weight(:));
+            coeff  = coeffs(2);
+            polyquad = X_m.^2;
+        end
+        
+        %%% image measurements
+        
+        function [fwhm_px, xl, xr] = fwhm( signal, thr )
+        %FHWM determines the FWHM
+        %   [fwhm_px, xl, xr] = MIP.fwhm( signal, thr )
+
+            % error if 2D
+            if (size(signal,1)==1 && size(signal,2)==1)
+                error('data has to be 1D')
+            end
+            
+            % reshaping if needed
+            if size(signal,1)>size(signal,2)
+                signal = signal';
+            end
+            
+            % allow a different threshold
+            if nargin==1
+                thr = max(signal(:)/2);
+            end
+            
+            bounds = find(signal>thr);
+            % here are the coarse estimate of threshold crossing
+            ixl_e = min(bounds);
+            ixr_e = max(bounds);
+            
+            % refine the threasold crossing estimate using
+            % explicit linear interpolation
+            % left edge
+            if ixl_e>1 %make sure there is a left edge
+                xl = ixl_e-(signal(ixl_e)-thr)/(signal(ixl_e)-signal(ixl_e-1));
+            else %otherwise, pupulate missing edge as NaNs
+                xl = NaN;
+            end
+            % right edge
+            if ixr_e<length(signal)
+                xr = ixr_e-(signal(ixr_e)-thr)/(signal(ixr_e+1)-signal(ixr_e));
+            else
+                xr = NaN;
+            end
+            
+            fwhm_px = abs(xr-xl);
+        end
+
+        function [enc, x_px, fraction] = enc_energy(Intensity, size_px)
+        %ENC_ENERGY Encircled energy in one dimension
+        %   enc = enc_energy(intensity_1D)
+        %   [enc, x_px, fraction] = enc_energy(Intensity, size_px)
+            
+            if size(Intensity,1)>size(Intensity,2)
+                I = Intensity';
+            else
+                I = Intensity;
+            end
+            
+            Npx = length(I);
+            
+            % if the signal is center-symmetric
+            if mod(Npx,2)==0
+                enc = [0 cumsum(I((Npx/2+1):Npx)+I((Npx/2):-1:1))]./sum(I);
+            else
+                enc_left  = ( cumsum(I(((Npx+1)/2): 1:(Npx-1)))+ cumsum( I(((Npx+1)/2+1): 1: Npx)) )/2;
+                enc_right = ( cumsum(I(((Npx+1)/2):-1:      2))+ cumsum( I(((Npx+1)/2-1):-1:   1)) )/2;
+                enc = [0 enc_left+enc_right];
+                enc = enc./sum(I);
+            end
+            
+            %radius
+            x_px = 0:(length(enc)-1);
+            
+            fraction = 1;
+            if nargin==2 && size_px<x_px(end)
+                fraction  = interp1(x_px,enc,size_px);
+            end
+        end
+
         
         function [output, Greg] = dftregistration(buf1ft,buf2ft,usfac)
-            % function [output Greg] = dftregistration(buf1ft,buf2ft,usfac);
-            % Efficient subpixel image registration by crosscorrelation. This code
-            % gives the same precision as the FFT upsampled cross correlation in a
-            % small fraction of the computation time and with reduced memory
-            % requirements. It obtains an initial estimate of the crosscorrelation peak
-            % by an FFT and then refines the shift estimation by upsampling the DFT
-            % only in a small neighborhood of that estimate by means of a
-            % matrix-multiply DFT. With this procedure all the image points are used to
-            % compute the upsampled crosscorrelation.
-            % Manuel Guizar - Dec 13, 2007
+        % function [output Greg] = dftregistration(buf1ft,buf2ft,usfac);
+        % Efficient subpixel image registration by crosscorrelation. This code
+        % gives the same precision as the FFT upsampled cross correlation in a
+        % small fraction of the computation time and with reduced memory
+        % requirements. It obtains an initial estimate of the crosscorrelation peak
+        % by an FFT and then refines the shift estimation by upsampling the DFT
+        % only in a small neighborhood of that estimate by means of a
+        % matrix-multiply DFT. With this procedure all the image points are used to
+        % compute the upsampled crosscorrelation.
+        % Manuel Guizar - Dec 13, 2007
             
-            % Portions of this code were taken from code written by Ann M. Kowalczyk
-            % and James R. Fienup.
-            % J.R. Fienup and A.M. Kowalczyk, "Phase retrieval for a complex-valued
-            % object by using a low-resolution image," J. Opt. Soc. Am. A 7, 450-458
-            % (1990).
-            
-            % Citation for this algorithm:
-            % Manuel Guizar-Sicairos, Samuel T. Thurman, and James R. Fienup,
-            % "Efficient subpixel image registration algorithms," Opt. Lett. 33,
-            % 156-158 (2008).
-            
-            % Inputs
-            % buf1ft    Fourier transform of reference image,
-            %           DC in (1,1)   [DO NOT FFTSHIFT]
-            % buf2ft    Fourier transform of image to register,
-            %           DC in (1,1) [DO NOT FFTSHIFT]
-            % usfac     Upsampling factor (integer). Images will be registered to
-            %           within 1/usfac of a pixel. For example usfac = 20 means the
-            %           images will be registered within 1/20 of a pixel. (default = 1)
-            
-            % Outputs
-            % output =  [error,diffphase,net_row_shift,net_col_shift]
-            % error     Translation invariant normalized RMS error between f and g
-            % diffphase     Global phase difference between the two images (should be
-            %               zero if images are non-negative).
-            % net_row_shift net_col_shift   Pixel shifts between images
-            % Greg      (Optional) Fourier transform of registered version of buf2ft,
-            %           the global phase difference is compensated for.
-            
+        % Portions of this code were taken from code written by Ann M. Kowalczyk
+        % and James R. Fienup.
+        % J.R. Fienup and A.M. Kowalczyk, "Phase retrieval for a complex-valued
+        % object by using a low-resolution image," J. Opt. Soc. Am. A 7, 450-458
+        % (1990).
+
+        % Citation for this algorithm:
+        % Manuel Guizar-Sicairos, Samuel T. Thurman, and James R. Fienup,
+        % "Efficient subpixel image registration algorithms," Opt. Lett. 33,
+        % 156-158 (2008).
+
+        % Inputs
+        % buf1ft    Fourier transform of reference image,
+        %           DC in (1,1)   [DO NOT FFTSHIFT]
+        % buf2ft    Fourier transform of image to register,
+        %           DC in (1,1) [DO NOT FFTSHIFT]
+        % usfac     Upsampling factor (integer). Images will be registered to
+        %           within 1/usfac of a pixel. For example usfac = 20 means the
+        %           images will be registered within 1/20 of a pixel. (default = 1)
+
+        % Outputs
+        % output =  [error,diffphase,net_row_shift,net_col_shift]
+        % error     Translation invariant normalized RMS error between f and g
+        % diffphase     Global phase difference between the two images (should be
+        %               zero if images are non-negative).
+        % net_row_shift net_col_shift   Pixel shifts between images
+        % Greg      (Optional) Fourier transform of registered version of buf2ft,
+        %           the global phase difference is compensated for.
+
             % Default usfac to 1
             if exist('usfac')~=1, usfac=1; end
             
@@ -2412,29 +2480,29 @@ classdef MIP < handle
         end
         
         function out=dftups(in,nor,noc,usfac,roff,coff)
-            % function out=dftups(in,nor,noc,usfac,roff,coff);
-            % Upsampled DFT by matrix multiplies, can compute an upsampled DFT in just
-            % a small region.
-            % usfac         Upsampling factor (default usfac = 1)
-            % [nor,noc]     Number of pixels in the output upsampled DFT, in
-            %               units of upsampled pixels (default = size(in))
-            % roff, coff    Row and column offsets, allow to shift the output array to
-            %               a region of interest on the DFT (default = 0)
-            % Recieves DC in upper left corner, image center must be in (1,1)
-            % Manuel Guizar - Dec 13, 2007
-            % Modified from dftus, by J.R. Fienup 7/31/06
-            
-            % This code is intended to provide the same result as if the following
-            % operations were performed
-            %   - Embed the array "in" in an array that is usfac times larger in each
-            %     dimension. ifftshift to bring the center of the image to (1,1).
-            %   - Take the FFT of the larger array
-            %   - Extract an [nor, noc] region of the result. Starting with the
-            %     [roff+1 coff+1] element.
-            
-            % It achieves this result by computing the DFT in the output array without
-            % the need to zeropad. Much faster and memory efficient than the
-            % zero-padded FFT approach if [nor noc] are much smaller than [nr*usfac nc*usfac]
+        % function out=dftups(in,nor,noc,usfac,roff,coff);
+        % Upsampled DFT by matrix multiplies, can compute an upsampled DFT in just
+        % a small region.
+        % usfac         Upsampling factor (default usfac = 1)
+        % [nor,noc]     Number of pixels in the output upsampled DFT, in
+        %               units of upsampled pixels (default = size(in))
+        % roff, coff    Row and column offsets, allow to shift the output array to
+        %               a region of interest on the DFT (default = 0)
+        % Recieves DC in upper left corner, image center must be in (1,1)
+        % Manuel Guizar - Dec 13, 2007
+        % Modified from dftus, by J.R. Fienup 7/31/06
+
+        % This code is intended to provide the same result as if the following
+        % operations were performed
+        %   - Embed the array "in" in an array that is usfac times larger in each
+        %     dimension. ifftshift to bring the center of the image to (1,1).
+        %   - Take the FFT of the larger array
+        %   - Extract an [nor, noc] region of the result. Starting with the
+        %     [roff+1 coff+1] element.
+
+        % It achieves this result by computing the DFT in the output array without
+        % the need to zeropad. Much faster and memory efficient than the
+        % zero-padded FFT approach if [nor noc] are much smaller than [nr*usfac nc*usfac]
             
             [nr,nc]=size(in);
             % Set defaults
@@ -2450,6 +2518,9 @@ classdef MIP < handle
             return
         end
     end
+    
+    %%TODO
+    %Bossung plot
     
     
     methods(Hidden)
