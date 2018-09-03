@@ -14,7 +14,8 @@ classdef MIP < handle
         eV  = 1.6021766208*1e-19% elementaty charge x 1V [J.s]
         Ag  = 6.0221408571e23   % Avogadro number [mol-1]
         deg = 180/pi            % degree/rad conversion
-        sigma_fhwm = 1/2*sqrt(2*log(2))
+        sigma_fhwm = 1/2*sqrt(2*log(2)) % gaussian fwhm to variance
+        in_m = 25.4e-3          % inch to meter conversion
         %data_folder = '.';
         %save_folder = '.';
     end
@@ -148,6 +149,25 @@ classdef MIP < handle
             end
         end
         
+        function X = Poisson(lambda,n)
+        % POISSON Generate a random value from the (discrete) Poisson distribution
+        %
+        % n represents the number of iterations
+        % distribution with parameter lambda.
+        % Derek O'Connor, 6 Feb 2012.  derekroconnor@eircom.net
+        %
+                for i=1:n;
+                    k=1; usave=1;
+                    usave = usave*rand;
+                    while usave >= exp(-lambda)
+                        usave = usave*rand;
+                        k = k+1;
+                    end
+                    X(i) = k;
+                end
+                hist(X)
+        end
+        
         function img_binned = bin2(img,p,q)
         %BIN2 2-dimensionnal binning of an image
         %   img_binned = MIP.bin2(img, x_bin, y_bin)
@@ -159,7 +179,13 @@ classdef MIP < handle
         % http://www.mathworks.com/matlabcentral/newsreader/view_thread/248189
             
             [m,n]=size(img); %M is the original matrix
-            
+            if mod(m,p)~=0
+                img = img(1:(m-mod(m,p)),:);
+            end
+            if mod(n,q)~=0
+                img = img(:,1:(n-mod(n,q)));
+            end
+            [m,n]=size(img);
             img=sum( reshape(img,p,[]) ,1 );
             img=reshape(img,m/p,[]).'; %Note transpose
             
@@ -1399,6 +1425,333 @@ classdef MIP < handle
         end
         
         
+        function p = fire(m)
+            %FIRE   Blue-Purple Hot colormap
+            %
+            % FIRE(M) returns an M-by-3 matrix containing a "fire" colormap.
+            % FIRE, by itself, is the same length as the current figure's
+            % colormap. If no figure exists, MATLAB creates one.
+            %
+            % To add this colormap as a default map, use 'addpath' with the
+            % directory containing 'fire.m'.
+            %
+            % To reset the colormap of the current figure use 'colormap(fire)'.
+            %
+            % see also:  HSV, GRAY, HOT, COOL, BONE, COPPER, FLAG, PINK, COLORMAP,
+            % RGBPLOT.
+            %
+            % To create any custom colormap, see the directions on line 23 of this
+            % m-file.
+            
+            if nargin < 1
+                m = size(get(gcf,'colormap'),1);
+            end
+            
+            %You can replace this M x 3 matrix with any matrix whose values range
+            %between 0 and 1 to create a new colormap file.  Use copy / paste to create
+            %a matrix like the one below, you do not have to add these values
+            %manually.  To create a new colormap, change 'cmap_mat' to the desired
+            %matrix, rename the function *and* the m-file from 'fire' to your desired
+            %colormap name.
+            
+            cmap_mat=[
+                0         0         0
+                0         0    0.0275
+                0         0    0.0588
+                0         0    0.0863
+                0         0    0.1176
+                0         0    0.1490
+                0         0    0.1765
+                0         0    0.2078
+                0         0    0.2392
+                0         0    0.2549
+                0         0    0.2706
+                0         0    0.2902
+                0         0    0.3059
+                0         0    0.3216
+                0         0    0.3412
+                0         0    0.3569
+                0.0039         0    0.3765
+                0.0157         0    0.3922
+                0.0275         0    0.4078
+                0.0392         0    0.4235
+                0.0510         0    0.4431
+                0.0627         0    0.4588
+                0.0745         0    0.4745
+                0.0863         0    0.4902
+                0.0980         0    0.5098
+                0.1098         0    0.5255
+                0.1216         0    0.5412
+                0.1333         0    0.5608
+                0.1451         0    0.5765
+                0.1569         0    0.5922
+                0.1686         0    0.6118
+                0.1804         0    0.6275
+                0.1922         0    0.6471
+                0.2039         0    0.6588
+                0.2157         0    0.6706
+                0.2275         0    0.6863
+                0.2392         0    0.6980
+                0.2510         0    0.7098
+                0.2627         0    0.7255
+                0.2745         0    0.7373
+                0.2863         0    0.7529
+                0.2980         0    0.7647
+                0.3098         0    0.7804
+                0.3216         0    0.7922
+                0.3333         0    0.8078
+                0.3451         0    0.8196
+                0.3569         0    0.8353
+                0.3686         0    0.8471
+                0.3843         0    0.8627
+                0.3961         0    0.8627
+                0.4078         0    0.8667
+                0.4196         0    0.8706
+                0.4314         0    0.8745
+                0.4431         0    0.8784
+                0.4549         0    0.8824
+                0.4667         0    0.8863
+                0.4784         0    0.8902
+                0.4902         0    0.8784
+                0.5020         0    0.8706
+                0.5137         0    0.8627
+                0.5255         0    0.8549
+                0.5373         0    0.8471
+                0.5490         0    0.8392
+                0.5608         0    0.8314
+                0.5725         0    0.8235
+                0.5804         0    0.8078
+                0.5882         0    0.7922
+                0.5961         0    0.7804
+                0.6039         0    0.7647
+                0.6118         0    0.7490
+                0.6196         0    0.7373
+                0.6275         0    0.7216
+                0.6353         0    0.7098
+                0.6392         0    0.6941
+                0.6431         0    0.6784
+                0.6510         0    0.6627
+                0.6549         0    0.6510
+                0.6588         0    0.6353
+                0.6667         0    0.6196
+                0.6706         0    0.6039
+                0.6784         0    0.5922
+                0.6824         0    0.5765
+                0.6863         0    0.5608
+                0.6941         0    0.5490
+                0.6980         0    0.5333
+                0.7020         0    0.5176
+                0.7098         0    0.5059
+                0.7137         0    0.4902
+                0.7216         0    0.4784
+                0.7255         0    0.4627
+                0.7294         0    0.4471
+                0.7373         0    0.4353
+                0.7412         0    0.4196
+                0.7451         0    0.4039
+                0.7529         0    0.3922
+                0.7569         0    0.3765
+                0.7647         0    0.3647
+                0.7686    0.0039    0.3490
+                0.7765    0.0118    0.3333
+                0.7804    0.0196    0.3216
+                0.7882    0.0275    0.3059
+                0.7922    0.0314    0.2902
+                0.8000    0.0392    0.2784
+                0.8039    0.0471    0.2627
+                0.8118    0.0549    0.2510
+                0.8157    0.0627    0.2353
+                0.8196    0.0745    0.2196
+                0.8235    0.0824    0.2078
+                0.8314    0.0941    0.1922
+                0.8353    0.1059    0.1765
+                0.8392    0.1137    0.1647
+                0.8431    0.1255    0.1490
+                0.8510    0.1373    0.1373
+                0.8549    0.1451    0.1216
+                0.8627    0.1569    0.1059
+                0.8667    0.1686    0.0902
+                0.8745    0.1804    0.0784
+                0.8784    0.1882    0.0627
+                0.8863    0.2000    0.0471
+                0.8902    0.2118    0.0314
+                0.8980    0.2235    0.0196
+                0.9020    0.2314    0.0157
+                0.9059    0.2431    0.0118
+                0.9137    0.2549    0.0118
+                0.9176    0.2667    0.0078
+                0.9216    0.2745    0.0039
+                0.9294    0.2863    0.0039
+                0.9333    0.2980         0
+                0.9412    0.3098         0
+                0.9451    0.3176         0
+                0.9529    0.3294         0
+                0.9569    0.3412         0
+                0.9647    0.3529         0
+                0.9686    0.3608         0
+                0.9765    0.3725         0
+                0.9804    0.3843         0
+                0.9882    0.3961         0
+                0.9882    0.4039         0
+                0.9882    0.4118         0
+                0.9922    0.4196         0
+                0.9922    0.4275         0
+                0.9922    0.4353         0
+                0.9961    0.4431         0
+                0.9961    0.4510         0
+                1.0000    0.4588         0
+                1.0000    0.4667         0
+                1.0000    0.4745         0
+                1.0000    0.4824         0
+                1.0000    0.4902         0
+                1.0000    0.4980         0
+                1.0000    0.5059         0
+                1.0000    0.5137         0
+                1.0000    0.5216         0
+                1.0000    0.5255         0
+                1.0000    0.5333         0
+                1.0000    0.5412         0
+                1.0000    0.5490         0
+                1.0000    0.5529         0
+                1.0000    0.5608         0
+                1.0000    0.5686         0
+                1.0000    0.5765         0
+                1.0000    0.5804         0
+                1.0000    0.5882         0
+                1.0000    0.5961         0
+                1.0000    0.6039         0
+                1.0000    0.6078         0
+                1.0000    0.6157         0
+                1.0000    0.6235         0
+                1.0000    0.6314         0
+                1.0000    0.6353         0
+                1.0000    0.6431         0
+                1.0000    0.6510         0
+                1.0000    0.6588         0
+                1.0000    0.6627         0
+                1.0000    0.6706         0
+                1.0000    0.6784         0
+                1.0000    0.6863         0
+                1.0000    0.6902         0
+                1.0000    0.6980         0
+                1.0000    0.7059         0
+                1.0000    0.7137         0
+                1.0000    0.7216         0
+                1.0000    0.7294         0
+                1.0000    0.7373         0
+                1.0000    0.7451         0
+                1.0000    0.7490         0
+                1.0000    0.7569         0
+                1.0000    0.7647         0
+                1.0000    0.7725         0
+                1.0000    0.7804         0
+                1.0000    0.7882         0
+                1.0000    0.7961         0
+                1.0000    0.8039         0
+                1.0000    0.8078         0
+                1.0000    0.8157         0
+                1.0000    0.8235         0
+                1.0000    0.8314         0
+                1.0000    0.8353         0
+                1.0000    0.8431         0
+                1.0000    0.8510         0
+                1.0000    0.8588         0
+                1.0000    0.8627         0
+                1.0000    0.8706         0
+                1.0000    0.8784         0
+                1.0000    0.8863         0
+                1.0000    0.8941         0
+                1.0000    0.9020         0
+                1.0000    0.9098         0
+                1.0000    0.9176         0
+                1.0000    0.9216    0.0157
+                1.0000    0.9294    0.0314
+                1.0000    0.9373    0.0510
+                1.0000    0.9451    0.0667
+                1.0000    0.9490    0.0824
+                1.0000    0.9569    0.1020
+                1.0000    0.9647    0.1176
+                1.0000    0.9725    0.1373
+                1.0000    0.9725    0.1647
+                1.0000    0.9765    0.1961
+                1.0000    0.9804    0.2275
+                1.0000    0.9843    0.2588
+                1.0000    0.9882    0.2902
+                1.0000    0.9922    0.3216
+                1.0000    0.9961    0.3529
+                1.0000    1.0000    0.3843
+                1.0000    1.0000    0.4118
+                1.0000    1.0000    0.4431
+                1.0000    1.0000    0.4745
+                1.0000    1.0000    0.5059
+                1.0000    1.0000    0.5333
+                1.0000    1.0000    0.5647
+                1.0000    1.0000    0.5961
+                1.0000    1.0000    0.6275
+                1.0000    1.0000    0.6549
+                1.0000    1.0000    0.6863
+                1.0000    1.0000    0.7176
+                1.0000    1.0000    0.7490
+                1.0000    1.0000    0.7804
+                1.0000    1.0000    0.8118
+                1.0000    1.0000    0.8431
+                1.0000    1.0000    0.8745
+                1.0000    1.0000    0.8902
+                1.0000    1.0000    0.9059
+                1.0000    1.0000    0.9216
+                1.0000    1.0000    0.9373
+                1.0000    1.0000    0.9529
+                1.0000    1.0000    0.9686
+                1.0000    1.0000    0.9843
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                1.0000    1.0000    1.0000
+                ];
+            
+            %interpolate values
+            xin=linspace(0,1,m)';
+            xorg=linspace(0,1,size(cmap_mat,1));
+            
+            p(:,1)=interp1(xorg,cmap_mat(:,1),xin,'linear');
+            p(:,2)=interp1(xorg,cmap_mat(:,2),xin,'linear');
+            p(:,3)=interp1(xorg,cmap_mat(:,3),xin,'linear');
+            
+            if nargin == 0;
+                colormap(cmap_mat)
+            end
+        end
+        
+        
+        function [ cmap ] = dkbluered( n_level )
+            %DKBLUERED Dark blue / Red colormap
+            % MIP.dkbluered
+            
+            if nargin < 1
+                n_level = size(get(gcf,'colormap'),1);
+            end
+            
+            cmap = ones(n_level,3);
+            
+            x=1:n_level;
+            r = min(0,(x/n_level-1/2))*2;
+            g = -(-x/n_level+1/2).*sign(-x/n_level+1/2)*2;
+            b = min(0,(-x/n_level+1/2))*2;
+            l = abs(x-n_level/2)/n_level;
+            L=repmat(l,3,1)';
+            
+            cmap = (cmap + [r' g' b']).*(1-L*0.5);
+            
+            if nargin == 0
+                colormap(cmap)
+            end
+        end
+        
+        
         function printmat(matrix,precision)
         %PRINTMAT Print matrices to the console in a copyable form
         %   MIP.printmat(matrix, precision)
@@ -1894,33 +2247,38 @@ classdef MIP < handle
         % Fourier Optics
         
         function u_out=propTF(u_in,L,lambda,z)
-        %PROPTF Fourier optics propagation using Transfer Function kernel method
-        %   u_out=MIP.propTF(u_in,L,lambda,z)
-        %
-        %     propagation - transfer function approach
-        %     assumes same x and y side lengths and
-        %     uniform sampling
-        %     u1 - source plane field
-        %     L - source and observation plane side length
-        %     lambda - wavelength
-        %     z - propagation distance
-        %     u2 - observation plane field
-        %
-        % See also MIP.PROPIR, MIP.PROPFF, MIP.TILT, MIP.LENS
-
-        % December 2012
-        % Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
-        % adapted from 'Computational Fourier Optics' chap V.2
+            %PROPTF2 Fourier optics propagation using Transfer Function kernel method
+            %   u_out=MIP.propTF(u_in,L,lambda,z)
+            %
+            %     propagation - transfer function approach
+            %     assumes same x and y side lengths and
+            %     uniform sampling
+            %     u1 - source plane field
+            %     L - source and observation plane side length
+            %     lambda - wavelength
+            %     z - propagation distance
+            %     u2 - observation plane field
+            %
+            % See also MIP.PROPIR, MIP.PROPFF, MIP.TILT, MIP.LENS
             
-            [M,~]=size(u_in); %get input field array size
-            dx=L/M; %sample interval
-            k=2*pi/lambda; %wavenumber
+            % December 2012
+            % Antoine Wojdyla, CXRO/LBNL awojdyla@lbl.gov
+            % adapted from 'Computational Fourier Optics' chap V.2
+            
+            [Ny, Nx]=size(u_in); %get input field array size
+            dx=L/Nx; %sample interval
+            
             if dx<lambda.*z/L
                 warning(sprintf('Fourier Transform propagation kernel is not appropriate (by a factor %1.3f).\nConsider using Impulse Response propagation kernel (propIR) to reduce aliasing\n',lambda.*z/(L*dx)))
             end
             
-            fx=-1/(2*dx):1/L:1/(2*dx)-1/L; %freq coords
-            [FX,FY]=meshgrid(fx,fx);
+            fx = MIP.fs(dx:dx:Nx*dx);
+            if Ny>2
+            fy = MIP.fs(dx:dx:Ny*dx);
+            else
+                fy = 0;
+            end
+            [FX,FY]=meshgrid(fx,fy);
             
             H=exp(-1i*pi*lambda*z*(FX.^2+FY.^2)); %trans func
             H=fftshift(H); %shift trans func
@@ -1928,6 +2286,25 @@ classdef MIP < handle
             U2=H.*U1; %multiply
             u_out=ifftshift(ifft2(U2)); %inv fft, center obs field
         end
+        
+        
+%         function u_out=propTF(u_in,L,lambda,z)            
+%             [M,~]=size(u_in); %get input field array size
+%             dx=L/M; %sample interval
+%             k=2*pi/lambda; %wavenumber
+%             if dx<lambda.*z/L
+%                 warning(sprintf('Fourier Transform propagation kernel is not appropriate (by a factor %1.3f).\nConsider using Impulse Response propagation kernel (propIR) to reduce aliasing\n',lambda.*z/(L*dx)))
+%             end
+%             
+%             fx=-1/(2*dx):1/L:1/(2*dx)-1/L; %freq coords
+%             [FX,FY]=meshgrid(fx,fx);
+%             
+%             H=exp(-1i*pi*lambda*z*(FX.^2+FY.^2)); %trans func
+%             H=fftshift(H); %shift trans func
+%             U1=fft2(fftshift(u_in)); %shift, fft src field
+%             U2=H.*U1; %multiply
+%             u_out=ifftshift(ifft2(U2)); %inv fft, center obs field
+%         end
         
         
         function u2 = propIR(u1,L,lambda,z)
@@ -2232,6 +2609,7 @@ classdef MIP < handle
         
         function [fwhm_px, xl, xr] = fwhm( signal, thr )
         %FHWM determines the FWHM
+        %   [fwhm_px, xl, xr] = MIP.fwhm( signal) thresholds at max/2
         %   [fwhm_px, xl, xr] = MIP.fwhm( signal, thr )
 
             % error if 2D
@@ -2303,7 +2681,198 @@ classdef MIP < handle
                 fraction  = interp1(x_px,enc,size_px);
             end
         end
-
+        
+        function st = stamp(str, sz_px)
+            % STAMP creates a string as a bitmap
+            %   st = MIP.stamp(str)
+            %   st = MIP.stamp(str, sz_px)
+            %
+            % See also MIP.ASCII2BITMAP
+            
+            if ~exist('sz_px','var')
+                sz_px = 8;
+            end
+            for i=1:length(str)
+                if i==1
+                    st = MIP.ascii2bitmap(str(1));
+                else
+                    st = [st,MIP.ascii2bitmap(str(i))];
+                end
+            end
+            if sz_px~=8
+                if log2(sz_px) == round(log2(sz_px))
+                    st = MIP. rescale_nn(st,sz_px/8);
+                else
+                    st = MIP.resize(st,sz_px,sz_px*length(str));
+                end
+            end
+        end
+        
+        function img_stamped = stamp_img(img, str, sz_px)
+            img = double(img);
+            [len,wid] = size(img);
+            x_roi = (wid-sz_px*length(str)+1):wid;
+            y_roi = (len-sz_px+1):len;
+            img_stamped = (img);
+            img_stamped(y_roi,x_roi) = (MIP.stamp(str,sz_px)*(max(img(:))-min(img(:)))+min(img(:)));
+        end
+        
+        function bitmap = ascii2bitmap(letter)
+            % ASCII2BITMAP Letters as bitmap
+            %   bitmap = ascii2bitmap(letter) creates a 8x8 bitmap of a
+            %   letter (the argument has to be single letter)
+            %
+            % stolen from https:%github.com/dhepper/font8x8
+            %
+            % See also MIP.STAMP
+            letters  = [...
+                '0000000000000000';...  % U+0000 (nul)
+                '0000000000000000';...  % U+0001
+                '0000000000000000';...  % U+0002
+                '0000000000000000';...  % U+0003
+                '0000000000000000';...  % U+0004
+                '0000000000000000';...  % U+0005
+                '0000000000000000';...  % U+0006
+                '0000000000000000';...  % U+0007
+                '0000000000000000';...  % U+0008
+                '0000000000000000';...  % U+0009
+                '0000000000000000';...  % U+000A
+                '0000000000000000';...  % U+000B
+                '0000000000000000';...  % U+000C
+                '0000000000000000';...  % U+000D
+                '0000000000000000';...  % U+000E
+                '0000000000000000';...  % U+000F
+                '0000000000000000';...  % U+0010
+                '0000000000000000';...  % U+0011
+                '0000000000000000';...  % U+0012
+                '0000000000000000';...  % U+0013
+                '0000000000000000';...  % U+0014
+                '0000000000000000';...  % U+0015
+                '0000000000000000';...  % U+0016
+                '0000000000000000';...  % U+0017
+                '0000000000000000';...  % U+0018
+                '0000000000000000';...  % U+0019
+                '0000000000000000';...  % U+001A
+                '0000000000000000';...  % U+001B
+                '0000000000000000';...  % U+001C
+                '0000000000000000';...  % U+001D
+                '0000000000000000';...  % U+001E
+                '0000000000000000';...  % U+001F
+                '0000000000000000';...  % U+0020 (space)
+                '183C3C1818001800';...  % U+0021 (!)
+                '3636000000000000';...  % U+0022 (")
+                '36367F367F363600';...  % U+0023 (#)
+                '0C3E031E301F0C00';...  % U+0024 ($)
+                '006333180C666300';...  % U+0025 (%)
+                '1C361C6E3B336E00';...  % U+0026 (&)
+                '0606030000000000';...  % U+0027 (')
+                '180C0606060C1800';...  % U+0028 (()
+                '060C1818180C0600';...  % U+0029 ())
+                '00663CFF3C660000';...  % U+002A (*)
+                '000C0C3F0C0C0000';...  % U+002B (+)
+                '00000000000C0C06';...  % U+002C (,)
+                '0000003F00000000';...  % U+002D (-)
+                '00000000000C0C00';...  % U+002E (.)
+                '6030180C06030100';...  % U+002F (/)
+                '3E63737B6F673E00';...  % U+0030 (0)
+                '0C0E0C0C0C0C3F00';...  % U+0031 (1)
+                '1E33301C06333F00';...  % U+0032 (2)
+                '1E33301C30331E00';...  % U+0033 (3)
+                '383C36337F307800';...  % U+0034 (4)
+                '3F031F3030331E00';...  % U+0035 (5)
+                '1C06031F33331E00';...  % U+0036 (6)
+                '3F3330180C0C0C00';...  % U+0037 (7)
+                '1E33331E33331E00';...  % U+0038 (8)
+                '1E33333E30180E00';...  % U+0039 (9)
+                '000C0C00000C0C00';...  % U+003A (:)
+                '000C0C00000C0C06';...  % U+003B (%)
+                '180C0603060C1800';...  % U+003C (<)
+                '00003F00003F0000';...  % U+003D (=)
+                '060C1830180C0600';...  % U+003E (>)
+                '1E3330180C000C00';...  % U+003F (?)
+                '3E637B7B7B031E00';...  % U+0040 (@)
+                '0C1E33333F333300';...  % U+0041 (A)
+                '3F66663E66663F00';...  % U+0042 (B)
+                '3C66030303663C00';...  % U+0043 (C)
+                '1F36666666361F00';...  % U+0044 (D)
+                '7F46161E16467F00';...  % U+0045 (E)
+                '7F46161E16060F00';...  % U+0046 (F)
+                '3C66030373667C00';...  % U+0047 (G)
+                '3333333F33333300';...  % U+0048 (H)
+                '1E0C0C0C0C0C1E00';...  % U+0049 (I)
+                '7830303033331E00';...  % U+004A (J)
+                '6766361E36666700';...  % U+004B (K)
+                '0F06060646667F00';...  % U+004C (L)
+                '63777F7F6B636300';...  % U+004D (M)
+                '63676F7B73636300';...  % U+004E (N)
+                '1C36636363361C00';...  % U+004F (O)
+                '3F66663E06060F00';...  % U+0050 (P)
+                '1E3333333B1E3800';...  % U+0051 (Q)
+                '3F66663E36666700';...  % U+0052 (R)
+                '1E33070E38331E00';...  % U+0053 (S)
+                '3F2D0C0C0C0C1E00';...  % U+0054 (T)
+                '3333333333333F00';...  % U+0055 (U)
+                '33333333331E0C00';...  % U+0056 (V)
+                '6363636B7F776300';...  % U+0057 (W)
+                '6363361C1C366300';...  % U+0058 (X)
+                '3333331E0C0C1E00';...  % U+0059 (Y)
+                '7F6331184C667F00';...  % U+005A (Z)
+                '1E06060606061E00';...  % U+005B ([)
+                '03060C1830604000';...  % U+005C (\)
+                '1E18181818181E00';...  % U+005D (])
+                '081C366300000000';...  % U+005E (^)
+                '00000000000000FF';...  % U+005F (_)
+                '0C0C180000000000';...  % U+0060 (`)
+                '00001E303E336E00';...  % U+0061 (a)
+                '0706063E66663B00';...  % U+0062 (b)
+                '00001E3303331E00';...  % U+0063 (c)
+                '3830303e33336E00';...  % U+0064 (d)
+                '00001E333f031E00';...  % U+0065 (e)
+                '1C36060f06060F00';...  % U+0066 (f)
+                '00006E33333E301F';...  % U+0067 (g)
+                '0706366E66666700';...  % U+0068 (h)
+                '0C000E0C0C0C1E00';...  % U+0069 (i)
+                '300030303033331E';...  % U+006A (j)
+                '070666361E366700';...  % U+006B (k)
+                '0E0C0C0C0C0C1E00';...  % U+006C (l)
+                '0000337F7F6B6300';...  % U+006D (m)
+                '00001F3333333300';...  % U+006E (n)
+                '00001E3333331E00';...  % U+006F (o)
+                '00003B66663E060F';...  % U+0070 (p)
+                '00006E33333E3078';...  % U+0071 (q)
+                '00003B6E66060F00';...  % U+0072 (r)
+                '00003E031E301F00';...  % U+0073 (s)
+                '080C3E0C0C2C1800';...  % U+0074 (t)
+                '0000333333336E00';...  % U+0075 (u)
+                '00003333331E0C00';...  % U+0076 (v)
+                '0000636B7F7F3600';...  % U+0077 (w)
+                '000063361C366300';...  % U+0078 (x)
+                '00003333333E301F';...  % U+0079 (y)
+                '00003F190C263F00';...  % U+007A (z)
+                '380C0C070C0C3800';...  % U+007B ()
+                '1818180018181800';...  % U+007C (|)
+                '070C0C380C0C0700';...  % U+007D (})
+                '6E3B000000000000';...  % U+007E (~)
+                '0000000000000000'];   % U+007F
+            
+            %%
+            if ischar(letter)
+                idx = double(letter);
+            else
+                idx = letter;
+            end
+            
+            letter_hex = letters(idx+1,:);
+            
+            conv = dec2bin(hex2dec(letter_hex));
+            lead_zeros = '';
+            for i=1:(64-size(conv,2))
+                lead_zeros = strcat('0',lead_zeros);
+            end
+            bitmap = double(flip(reshape([lead_zeros conv],8,8))')-48;
+            
+        end
+        
         
         function [output, Greg] = dftregistration(buf1ft,buf2ft,usfac)
         % function [output Greg] = dftregistration(buf1ft,buf2ft,usfac);
