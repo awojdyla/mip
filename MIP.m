@@ -1,12 +1,12 @@
 classdef MIP < handle
     % MIP MATLAB IMAGE PROCESSING tool
-    %
+    % available at https://github.com/awojdyla/mip
+    
     % The software is provided "as is",
     % without warranty of any kind, express or implied
-    % A Wojdyla, CXRO/LBNL
+    % A Wojdyla, ALS/CXRO - LBNL
     % awojdyla@lbl.gov
-    % September 2014 - December 2017
-    
+    % September 2014 - September 2018
     
     properties (Constant)
         c   = 299792458         % speed of light [m/s]
@@ -14,11 +14,16 @@ classdef MIP < handle
         eV  = 1.6021766208*1e-19% elementaty charge x 1V [J.s]
         Ag  = 6.0221408571e23   % Avogadro number [mol-1]
         deg = 180/pi            % degree/rad conversion
-        sigma_fhwm = 1/2*sqrt(2*log(2)) % gaussian fwhm to variance
+        sigma_fhwm = 1/(2*sqrt(2*log(2))); % gaussian fwhm to variance
         in_m = 25.4e-3          % inch to meter conversion
         %data_folder = '.';
-        %save_folder = '.';
+        save_folder = 'C:\Users\antoi\Documents\printouts\'
     end
+    
+    % autoload script
+    %     if exist('MIP','class')~=8
+    %         websave('MIP.m','https://raw.githubusercontent.com/awojdyla/mip/master/MIP.m')
+    %     end
     
     methods(Static)
         
@@ -264,8 +269,9 @@ classdef MIP < handle
         %   shifts the image in x- and y-direction, to the nearest pixel
         %
         % See also MIP.SPSHIFT2
-            
+            warning off
             image_shifted = circshift(circshift(input',round(x_shift_px))',round(y_shift_px));
+            warning on
         end
         
         function img_shifted = spshift2( img,x_shift_px, y_shift_px )
@@ -535,7 +541,7 @@ classdef MIP < handle
         %CIRCSUM Circular sum in 2D
         %   array_out = circsum(img_in)
         %
-        % See also MIP.FRC
+        % See also MIP.FRC, MIP.ENC_ENERGY
             
             if size(img_in,1) ~= size(img_in,2)
                 error('the input matrix must be square')
@@ -547,7 +553,8 @@ classdef MIP < handle
             xc = floor(N_px/2)+1;
             yc = floor(N_px/2)+1;
             
-            dcirc = zeros(1,floor(N_px/2));
+            %dcirc = zeros(1,floor((N_px/2));
+            dcirc = zeros(1,floor((N_px+1)/2));
             for i=1:floor(N_px/2)
                 domain = ((X-xc).^2+(Y-yc).^2)>=(i-1)^2 & ((X-xc).^2+(Y-yc).^2)<(i)^2;
                 dcirc(i) = sum(sum(domain.*(img_in)));
@@ -598,7 +605,45 @@ classdef MIP < handle
             end
         end
         
-        function [ img_out ] = remove_dc( img_in )
+        function W = wigner(Ex)
+        %WIGNER Calculates the Wigner distribution from a column vector
+        %   W  = wigner(Ex)
+        %   with W  = output Wigner distribution
+        %	     Ex = Input electric field (MUST be a column vector
+        
+        %	Notes:
+        %		W = Int(-inf..inf){E(x+y)E(x-y)exp[2ixy]}
+        %
+        %		E(x+y) & E(x-y) are calculated via a FFT (fast Fourier transform) using the
+        %		shift theorem. The integration is performed via a FFT. Thus it is important
+        %		for the data to satisfy the sampling theorem:
+        %		dy = 2*pi/X			X = span of all x-values	dy = y resolution
+        %		dx = 2*pi/Y			Y = span of all y-values	dx = x resolution
+        %		The data must be completely contained within the range x(0)..x(N-1) &
+        %		y(0)..y(N-1) (i.e. the function must fall to zero within this range).
+        %
+        %	v1.0
+        %
+        %	Currently waiting for update:
+        %		Remove the fft/ifft by performing this inside the last function calls
+        %		Allow an arbitrary output resolution
+        %		Allow an input vector for x (and possibly y).
+        %
+        % adapted from https://www.mathworks.com/matlabcentral/fileexchange/15637-calculate-wigner-distribution
+        
+            if (size(Ex, 2)-1)
+                error('E(x) must be a column vector');
+            end
+            
+            N = length(Ex);														%   Get length of vector
+            x = ifftshift(((0:N-1)'-N/2)*2*pi/(N-1));							%   Generate linear vector
+            X = (0:N-1)-N/2;
+            EX1 = ifft( (fft(Ex)*ones(1,N)).*exp( 1i*x*X/2 ));					%   +ve shift
+            EX2 = ifft( (fft(Ex)*ones(1,N)).*exp( -1i*x*X/2 ));					%   -ve shift
+            W = real(fftshift(fft(fftshift(EX1.*conj(EX2), 2), [], 2), 2));		%   Wigner function
+        end
+            
+            function [ img_out ] = remove_dc( img_in )
         %REMOVE_DC Removes the DC component of an image (for better display)
         %   img_out = remove_dc(img_in)
         %
@@ -1006,6 +1051,18 @@ classdef MIP < handle
             %imagesc(rlow); axis image
         end
         
+        function [ ephi ] = speckle_filtered( N, amp, freq)
+
+        %   See also MIP.GAUSSIAN, MIP.SPATIAL_FILTER
+
+            [X,Y] = meshgrid(linspace(-1,1 , N));
+            R = sqrt(X.^2+Y.^2);
+            FILTER = R<freq/N;
+            ephi = MIP.ift(MIP.ft(exp(1i*2*pi*randn(N)*amp).*FILTER));
+            
+            %imagesc(rlow); axis image
+        end
+        
         %FIXME: non-square matrices
         function Efilt = spatial_filter(E, L_m, lambda_m, NA, x_off_npc, y_off_npc)
         %SPATIAL_FILTER Spatial filtering of an image to account for limited aperture
@@ -1060,7 +1117,7 @@ classdef MIP < handle
        
 
             I_ph = I./sum(I(:))*N_ph;
-            I_n = round(I_ph+sqrt(I_ph).*rand(size(I_ph)));
+            I_n = round(I_ph+sqrt(I_ph).*randn(size(I_ph)));
         end
         
         function I_n = awg_noise(I,snr)
@@ -1313,7 +1370,7 @@ classdef MIP < handle
                 fwhm_px = 1;
             end
             
-            sigma_x = fwhm_px/2*sqrt(2*log(2));
+            sigma_x = fwhm_px/(2*sqrt(2*log(2)));
             g = exp(-((x_px-mean_px)/(sqrt(2)*sigma_x)).^2);
         end
         
@@ -1751,6 +1808,36 @@ classdef MIP < handle
             end
         end
         
+        function [ cmap ] = cmap_tone()
+            %DKBLUERED Dark blue / Red colormap
+            % MIP.dkbluered
+            
+            if nargin < 1
+                n_level = size(get(gcf,'colormap'),1);
+            end
+            
+            cmap = ones(n_level,3);
+            
+            x=1:n_level;
+            r = -x/n_level;
+            g = -x/n_level;
+            b = x*0;
+            
+            cmap = (cmap + [r' g' b']);
+            
+            if nargin == 0
+                colormap(cmap)
+            end
+        end
+        
+        function img_dkbluered = dkbluredimg(data)
+            
+            norm_data = data/max(data(:));
+            img_dkbluered = ones(size(data,1),size(data,2),3);
+            img_dkbluered(:,:,1) = 1-norm_data;
+            img_dkbluered(:,:,2) = 1-norm_data;
+        end
+        
         
         function printmat(matrix,precision)
         %PRINTMAT Print matrices to the console in a copyable form
@@ -1972,10 +2059,10 @@ classdef MIP < handle
             
             
             print(filename,'-dpng');
-            print(strcat(MIP.save_folder2,filename),'-dpng');
+            print(strcat(MIP.save_folder,filename),'-dpng');
             h=gcf;
-            saveas(h,strcat(MIP.save_folder2,'/',filename),'fig')
-            saveas(h,strcat(MIP.save_folder2,'/',filename),'pdf')
+            saveas(h,strcat(MIP.save_folder,'/',filename),'fig')
+            saveas(h,strcat(MIP.save_folder,'/',filename),'pdf')
             
         end
         
@@ -2002,10 +2089,10 @@ classdef MIP < handle
             end
             
             print(filename,'-dpng');
-            print(strcat(MIP.save_folder2,filename),'-dpng');
+            print(strcat(MIP.save_folder,filename),'-dpng');
             h=gcf;
-            saveas(h,strcat(MIP.save_folder2,'/',filename),'fig')
-            saveas(h,strcat(MIP.save_folder2,'/',filename),'pdf')
+            saveas(h,strcat(MIP.save_folder,'/',filename),'fig')
+            saveas(h,strcat(MIP.save_folder,'/',filename),'pdf')
             
         end
         
@@ -2281,10 +2368,12 @@ classdef MIP < handle
             [FX,FY]=meshgrid(fx,fy);
             
             H=exp(-1i*pi*lambda*z*(FX.^2+FY.^2)); %trans func
-            H=fftshift(H); %shift trans func
-            U1=fft2(fftshift(u_in)); %shift, fft src field
-            U2=H.*U1; %multiply
-            u_out=ifftshift(ifft2(U2)); %inv fft, center obs field
+            %H=fftshift(H); %shift trans func
+            %U1=fft2(fftshift(u_in)); %shift, fft src field
+            %U2=H.*U1; %multiply
+            %u_out=ifftshift(ifft2(U2)); %inv fft, center obs field
+            
+            u_out = MIP.ift(MIP.ft(u_in).*H);
         end
         
         
@@ -2399,14 +2488,19 @@ classdef MIP < handle
             % diam - lens diameter
             % uout - output field
             
-            [M,N]=size(u_in); %get input field array size
-            dx=L/M; %sample interval
             k=2*pi/lambda; %wavenumber
-            %
-            x=-L/2:dx:L/2-dx; %coords
-            [X,Y]=meshgrid(x,x);
-            
-            u_out=u_in.*exp(-1i*k/(2*zf)*(X.^2+Y.^2)).*double(sqrt(X.^2+Y.^2)<diam/2); %apply focus
+            [M,N]=size(u_in); %get input field array size
+            % 1D case
+            if M==1 || N==1
+                M = max(M,N);
+                dx=L/M; %sample interval
+                x=-L/2:dx:L/2-dx; %coords
+                u_out=u_in.*exp(-1i*k/(2*zf)*x.^2).*double(abs(x)<diam/2); %apply focus
+            else
+                dx=L/M; %sample interval                
+                [X,Y]=meshgrid(-L/2:dx:L/2-dx);
+                u_out=u_in.*exp(-1i*k/(2*zf)*(X.^2+Y.^2)).*double(sqrt(X.^2+Y.^2)<diam/2); %apply focus
+            end
         end
         
         function [uq, xq_m] = propHF(up, xp_m, xq_m, lambda_m, z_m, option)
@@ -2654,6 +2748,8 @@ classdef MIP < handle
         %ENC_ENERGY Encircled energy in one dimension
         %   enc = enc_energy(intensity_1D)
         %   [enc, x_px, fraction] = enc_energy(Intensity, size_px)
+        %
+        % See also MIP.CIRCSUM
             
             if size(Intensity,1)>size(Intensity,2)
                 I = Intensity';
